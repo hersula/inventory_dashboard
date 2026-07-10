@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, useCallback, FormEvent } from "react";
 import { useSession } from "next-auth/react";
-import { Plus, Trash2, Loader2, XCircle, Eye } from "lucide-react";
+import { Plus, Pencil, Trash2, Loader2, XCircle, Eye } from "lucide-react";
 import DataTable, { Column } from "@/components/DataTable";
 import Modal from "@/components/Modal";
 import Badge from "@/components/Badge";
@@ -41,6 +41,7 @@ export default function PengadaanPage() {
   const [search, setSearch] = useState("");
 
   const [modalOpen, setModalOpen] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
   const [detailOpen, setDetailOpen] = useState<Pengadaan | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -89,10 +90,27 @@ export default function PengadaanPage() {
   useAutoRefresh(loadRefData, 15000);
 
   function openCreate() {
+    setEditingId(null);
     setSupplierId("");
     setTanggal(new Date().toISOString().slice(0, 10));
     setCatatan("");
     setRows([{ ...emptyRow }]);
+    setError("");
+    setModalOpen(true);
+  }
+
+  function openEdit(p: Pengadaan) {
+    setEditingId(p.id);
+    setSupplierId(p.supplier ? String(p.supplier.id) : "");
+    setTanggal(new Date(p.tanggal).toISOString().slice(0, 10));
+    setCatatan(p.catatan ?? "");
+    setRows(
+      p.detail.map((d) => ({
+        barangId: String(d.barang.id),
+        qty: String(d.qty),
+        hargaSatuan: String(d.hargaSatuan),
+      }))
+    );
     setError("");
     setModalOpen(true);
   }
@@ -122,8 +140,8 @@ export default function PengadaanPage() {
     }
 
     setSaving(true);
-    const res = await fetch("/api/pengadaan", {
-      method: "POST",
+    const res = await fetch(editingId ? `/api/pengadaan/${editingId}` : "/api/pengadaan", {
+      method: editingId ? "PUT" : "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         supplierId: supplierId ? Number(supplierId) : null,
@@ -184,6 +202,15 @@ export default function PengadaanPage() {
             </button>
             {canManage && (
               <button
+                onClick={() => openEdit(p)}
+                className="icon-btn"
+                title="Edit transaksi"
+              >
+                <Pencil className="h-4 w-4" />
+              </button>
+            )}
+            {canManage && (
+              <button
                 onClick={() => handleCancel(p)}
                 className="icon-btn hover:bg-red-50 hover:text-red-600"
                 title="Batalkan"
@@ -224,7 +251,7 @@ export default function PengadaanPage() {
       />
 
       {/* Form transaksi baru */}
-      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="Transaksi Pengadaan Baru" widthClass="max-w-2xl">
+      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editingId ? "Edit Transaksi Pengadaan" : "Transaksi Pengadaan Baru"} widthClass="max-w-2xl">
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
@@ -320,7 +347,7 @@ export default function PengadaanPage() {
             </button>
             <button type="submit" disabled={saving} className="btn-primary">
               {saving && <Loader2 className="h-4 w-4 animate-spin" />}
-              Simpan Transaksi
+              {editingId ? "Simpan Perubahan" : "Simpan Transaksi"}
             </button>
           </div>
         </form>

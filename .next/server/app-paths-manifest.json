@@ -1,11 +1,11 @@
 {
-  "/api/auth/[...nextauth]/route": "app/api/auth/[...nextauth]/route.js",
   "/api/barang/route": "app/api/barang/route.js",
-  "/api/kategori/route": "app/api/kategori/route.js",
-  "/api/supplier/route": "app/api/supplier/route.js",
   "/api/pengadaan/route": "app/api/pengadaan/route.js",
+  "/api/pelanggan/route": "app/api/pelanggan/route.js",
+  "/api/supplier/route": "app/api/supplier/route.js",
+  "/api/penjualan/route": "app/api/penjualan/route.js",
   "/(app)/dashboard/page": "app/(app)/dashboard/page.js",
-  "/(app)/master-barang/page": "app/(app)/master-barang/page.js",
   "/(app)/penjualan/page": "app/(app)/penjualan/page.js",
+  "/(app)/master-barang/page": "app/(app)/master-barang/page.js",
   "/(app)/pengadaan/page": "app/(app)/pengadaan/page.js"
 }
