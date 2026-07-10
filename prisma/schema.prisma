@@ -1,0 +1,133 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  MANAGER
+  STAFF
+}
+
+model User {
+  id        Int         @id @default(autoincrement())
+  name      String
+  email     String      @unique
+  password  String
+  role      Role        @default(STAFF)
+  active    Boolean     @default(true)
+  createdAt DateTime    @default(now())
+  pengadaan Pengadaan[]
+  penjualan Penjualan[]
+}
+
+model Kategori {
+  id     Int      @id @default(autoincrement())
+  nama   String   @unique
+  barang Barang[]
+}
+
+model Supplier {
+  id        Int         @id @default(autoincrement())
+  nama      String
+  alamat    String?
+  telepon   String?
+  email     String?
+  pengadaan Pengadaan[]
+}
+
+model Pelanggan {
+  id        Int         @id @default(autoincrement())
+  nama      String
+  alamat    String?
+  telepon   String?
+  penjualan Penjualan[]
+}
+
+model Barang {
+  id              Int               @id @default(autoincrement())
+  kode            String            @unique
+  nama            String
+  kategoriId      Int?
+  kategori        Kategori?         @relation(fields: [kategoriId], references: [id])
+  satuan          String            @default("pcs")
+  hargaBeli       Decimal           @db.Decimal(15, 2)
+  hargaJual       Decimal           @db.Decimal(15, 2)
+  stok            Int               @default(0)
+  stokMinimum     Int               @default(5)
+  deskripsi       String?           @db.Text
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  pengadaanDetail PengadaanDetail[]
+  penjualanDetail PenjualanDetail[]
+
+  @@index([kategoriId])
+}
+
+model Pengadaan {
+  id         Int               @id @default(autoincrement())
+  nomor      String            @unique
+  tanggal    DateTime          @default(now())
+  supplierId Int?
+  supplier   Supplier?         @relation(fields: [supplierId], references: [id])
+  userId     Int
+  user       User              @relation(fields: [userId], references: [id])
+  status     String            @default("SELESAI")
+  catatan    String?
+  total      Decimal           @db.Decimal(15, 2) @default(0)
+  createdAt  DateTime          @default(now())
+  detail     PengadaanDetail[]
+
+  @@index([supplierId])
+  @@index([userId])
+}
+
+model PengadaanDetail {
+  id          Int       @id @default(autoincrement())
+  pengadaanId Int
+  pengadaan   Pengadaan @relation(fields: [pengadaanId], references: [id], onDelete: Cascade)
+  barangId    Int
+  barang      Barang    @relation(fields: [barangId], references: [id])
+  qty         Int
+  hargaSatuan Decimal   @db.Decimal(15, 2)
+  subtotal    Decimal   @db.Decimal(15, 2)
+
+  @@index([pengadaanId])
+  @@index([barangId])
+}
+
+model Penjualan {
+  id          Int               @id @default(autoincrement())
+  nomor       String            @unique
+  tanggal     DateTime          @default(now())
+  pelangganId Int?
+  pelanggan   Pelanggan?        @relation(fields: [pelangganId], references: [id])
+  userId      Int
+  user        User              @relation(fields: [userId], references: [id])
+  status      String            @default("SELESAI")
+  catatan     String?
+  total       Decimal           @db.Decimal(15, 2) @default(0)
+  createdAt   DateTime          @default(now())
+  detail      PenjualanDetail[]
+
+  @@index([pelangganId])
+  @@index([userId])
+}
+
+model PenjualanDetail {
+  id          Int       @id @default(autoincrement())
+  penjualanId Int
+  penjualan   Penjualan @relation(fields: [penjualanId], references: [id], onDelete: Cascade)
+  barangId    Int
+  barang      Barang    @relation(fields: [barangId], references: [id])
+  qty         Int
+  hargaSatuan Decimal   @db.Decimal(15, 2)
+  subtotal    Decimal   @db.Decimal(15, 2)
+
+  @@index([penjualanId])
+  @@index([barangId])
+}
