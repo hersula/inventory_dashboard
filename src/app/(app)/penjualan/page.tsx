@@ -105,13 +105,14 @@ export default function PenjualanPage() {
     setPelangganId(p.pelanggan ? String(p.pelanggan.id) : "");
     setTanggal(new Date(p.tanggal).toISOString().slice(0, 10));
     setCatatan(p.catatan ?? "");
-    setRows(
-      p.detail.map((d) => ({
+    setRows([
+      ...p.detail.map((d) => ({
         barangId: String(d.barang.id),
         qty: String(d.qty),
         hargaSatuan: String(d.hargaSatuan),
-      }))
-    );
+      })),
+      { ...emptyRow },
+    ]);
     const qtyMap: Record<number, number> = {};
     for (const d of p.detail) qtyMap[d.barang.id] = (qtyMap[d.barang.id] ?? 0) + d.qty;
     setOriginalQty(qtyMap);
@@ -126,6 +127,12 @@ export default function PenjualanPage() {
       if (patch.barangId) {
         const b = barangList.find((x) => x.id === Number(patch.barangId));
         if (b) next[idx].hargaSatuan = String(b.hargaJual);
+        // Auto-tambah baris kosong baru begitu baris TERAKHIR baru saja
+        // dipilih barangnya, supaya user bisa langsung memilih barang
+        // kedua/ketiga tanpa perlu ingat klik "+ Tambah baris" secara manual.
+        if (idx === next.length - 1) {
+          next.push({ ...emptyRow });
+        }
       }
       return next;
     });
@@ -287,15 +294,24 @@ export default function PenjualanPage() {
 
           <div>
             <div className="mb-2 flex items-center justify-between">
-              <label className="label mb-0">Daftar Barang</label>
+              <label className="label mb-0">
+                Daftar Barang{" "}
+                <span className="font-normal text-slate-400">
+                  ({rows.filter((r) => r.barangId).length} barang dipilih)
+                </span>
+              </label>
               <button
                 type="button"
                 onClick={() => setRows([...rows, { ...emptyRow }])}
-                className="text-xs font-medium text-brand-600 hover:underline"
+                className="inline-flex items-center gap-1 rounded-md border border-dashed border-brand-300 px-2.5 py-1 text-xs font-medium text-brand-600 hover:bg-brand-50"
               >
-                + Tambah baris
+                <Plus className="h-3.5 w-3.5" />
+                Tambah baris
               </button>
             </div>
+            <p className="mb-2 -mt-1 text-xs text-slate-400">
+              Baris baru otomatis muncul begitu Anda memilih barang — tekan tombol ini hanya jika ingin menambah baris kosong tanpa memilih barang dulu.
+            </p>
 
             <div className="space-y-2">
               {rows.map((row, idx) => {

@@ -9,8 +9,8 @@ Aplikasi dashboard manajemen **barang, pengadaan, dan penjualan** berbasis **Nex
 | **Login** | Autentikasi email/password (NextAuth, JWT session) |
 | **Dashboard** | Analisa barang: total jenis barang, nilai stok, tren penjualan vs pengadaan 6 bulan, komposisi kategori, barang terlaris, barang stok menipis |
 | **Master Barang** | CRUD data barang: kode, nama, kategori, satuan, harga beli/jual, stok, stok minimum |
-| **Pengadaan Barang** | Transaksi barang masuk (dari supplier). Menambah stok otomatis, riwayat transaksi, batal transaksi (stok dikembalikan) |
-| **Penjualan Barang** | Transaksi barang keluar. Mengurangi stok otomatis dengan validasi stok tersedia, riwayat transaksi, batal transaksi |
+| **Pengadaan Barang** | Transaksi barang masuk (dari supplier). Menambah stok otomatis, riwayat transaksi, **edit transaksi** (stok disesuaikan otomatis berdasarkan selisih qty), batal transaksi (stok dikembalikan) |
+| **Penjualan Barang** | Transaksi barang keluar. Mengurangi stok otomatis dengan validasi stok tersedia, riwayat transaksi, **edit transaksi** (stok disesuaikan otomatis, termasuk validasi jika qty baru melebihi stok tersedia), batal transaksi |
 | **Manajemen User** | CRUD user & role (khusus Administrator) |
 
 ## Role & Hak Akses
@@ -194,6 +194,23 @@ Setiap halaman (Dashboard, Master Barang, Pengadaan, Penjualan, Users) memakai h
 Indikator kecil "● Auto-refresh aktif · diperbarui HH:mm:ss" ditampilkan di pojok kanan atas setiap halaman sebagai penanda bahwa data selalu ter-update.
 
 > Catatan: polling berkala mengambil data lewat REST API biasa (bukan WebSocket), jadi cocok untuk skala toko/gudang menengah. Jika ke depan dibutuhkan update super real-time (misalnya banyak kasir aktif bersamaan), interval 15 detik pada `useAutoRefresh(loadData, 15000)` bisa diperpendek, atau diganti dengan WebSocket/Server-Sent Events.
+
+## Edit Transaksi Pengadaan & Penjualan
+
+Selain tambah, lihat detail, dan batalkan, kedua modul transaksi kini punya tombol **Edit** (ikon pensil) yang bisa mengubah tanggal, supplier/pelanggan, catatan, dan daftar item (barang, qty, harga satuan) pada transaksi yang sudah tersimpan.
+
+Penyesuaian stok saat edit dihitung berbasis **selisih (delta)**, bukan reset total, supaya tetap konsisten meski sudah ada transaksi lain setelahnya:
+
+- **Pengadaan**: jika qty sebuah barang dinaikkan, stok ikut bertambah sebesar selisihnya; jika diturunkan, stok dikurangi sebesar selisihnya. Sistem menolak perubahan (error 409) jika pengurangan tersebut akan membuat stok menjadi minus — misalnya karena barang tersebut sudah terlanjur terjual.
+- **Penjualan**: jika qty diturunkan, sebagian stok dikembalikan; jika dinaikkan, stok dikurangi lagi. Sistem menolak perubahan jika stok yang tersedia tidak mencukupi untuk qty baru.
+- Mengganti barang pada suatu baris (bukan cuma qty-nya) juga ditangani dengan benar: stok barang lama disesuaikan kembali, stok barang baru dipotong/ditambah sesuai jenis transaksinya.
+- Semua penyesuaian stok + perubahan detail transaksi dibungkus dalam satu `prisma.$transaction` agar tetap atomic (tidak ada kondisi stok "nyangkut" di tengah jalan bila terjadi error).
+
+Hanya role dengan permission `pengadaan.manage` / `penjualan.manage` (ADMIN, MANAGER, STAFF — lihat tabel role di atas) yang melihat tombol Edit dan Batalkan; role lain hanya bisa melihat.
+
+### Menambah Beberapa Barang dalam 1 Transaksi
+
+Form transaksi (baik saat membuat baru maupun edit) mendukung banyak baris barang. Sejak versi ini, baris kosong baru **muncul otomatis** begitu Anda memilih barang di baris terakhir — jadi Anda tidak perlu mengingat untuk menekan tombol "+ Tambah baris" secara manual setiap kali ingin menambah barang lain. Tombol "+ Tambah baris" tetap tersedia (kini dengan gaya lebih menonjol) untuk menambah baris kosong tanpa langsung memilih barang. Label "Daftar Barang" juga menampilkan penghitung real-time jumlah barang yang sudah dipilih, sehingga mudah memastikan semua barang benar-benar masuk sebelum menekan "Simpan".
 
 ## Keamanan
 
