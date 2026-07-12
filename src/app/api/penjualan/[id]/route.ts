@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requirePermission, getCompanyId } from "@/lib/apiAuth";
-import { jurnalPenjualan, hapusJurnalReferensi } from "@/lib/akuntansi";
+import { jurnalPenjualan, hapusJurnalReferensi, PPN_RATE } from "@/lib/akuntansi";
 import { z } from "zod";
 
 const itemSchema = z.object({
@@ -14,6 +14,8 @@ const updateSchema = z.object({
   tanggal: z.string().optional(),
   pelangganId: z.number().nullable().optional(),
   catatan: z.string().optional().nullable(),
+  diskonPersen: z.number().min(0).max(100).optional(),
+  pakaiPpn: z.boolean().optional(),
   items: z.array(itemSchema).min(1, "Minimal 1 item barang"),
 });
 
@@ -44,7 +46,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
   if (!parsed.success) {
     return NextResponse.json({ message: "Data tidak valid", issues: parsed.error.issues }, { status: 400 });
   }
-  const { items, pelangganId, catatan, tanggal } = parsed.data;
+  const { items, pelangganId, catatan, tanggal, diskonPersen = 0, pakaiPpn = true } = parsed.data;
 
   // Penjualan mengurangi stok saat dibuat. Saat diedit, hitung selisih qty
   // lama vs baru per barang: jika qty baru lebih kecil, sebagian stok
@@ -78,9 +80,14 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     if (delta !== 0) deltas.push({ barangId: bid, delta });
   }
 
-  const total = items.reduce((sum, item) => sum + item.qty * item.hargaSatuan, 0);
+  const subtotal = items.reduce((sum, item) => sum + item.qty * item.hargaSatuan, 0);
+  const diskonNominal = Math.round((subtotal * diskonPersen) / 100);
+  const dpp = subtotal - diskonNominal;
+  const ppn = pakaiPpn ? Math.round(dpp * PPN_RATE) : 0;
+  const total = dpp + ppn;
   // HPP dihitung ulang dari harga beli barang saat ini (barangList sudah
-  // memuat semua barang yang terlibat, termasuk baris baru).
+  // memuat semua barang yang terlibat, termasuk baris baru). Tidak
+  // dipengaruhi diskon/PPN sisi jual.
   const hpp = items.reduce((sum, item) => {
     const barang = barangList.find((b) => b.id === item.barangId);
     return sum + item.qty * Number(barang?.hargaBeli ?? 0);
@@ -99,6 +106,10 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
         tanggal: tanggal ? new Date(tanggal) : existing.tanggal,
         pelangganId: pelangganId ?? null,
         catatan,
+        subtotal,
+        diskonPersen,
+        diskonNominal,
+        ppn,
         total,
         detail: {
           create: items.map((item) => ({
@@ -119,6 +130,8 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
         penjualanId: id,
         nomor: updated.nomor,
         tanggal: updated.tanggal,
+        dpp,
+        ppn,
         total,
         hpp,
         userId: Number(session!.user.id),

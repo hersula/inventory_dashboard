@@ -9,10 +9,15 @@ import type { Prisma, PrismaClient } from "@prisma/client";
 export const KODE_AKUN = {
   KAS: "1101",
   PERSEDIAAN: "1103",
+  PPN_MASUKAN: "1104",
   HUTANG_USAHA: "2101",
+  PPN_KELUARAN: "2102",
   PENDAPATAN_PENJUALAN: "4101",
   HPP: "5101",
 } as const;
+
+/** Tarif PPN yang berlaku (11%) — satu sumber kebenaran dipakai di semua route transaksi. */
+export const PPN_RATE = 0.11;
 
 type TxClient = Omit<PrismaClient, "$connect" | "$disconnect" | "$on" | "$transaction" | "$use" | "$extends">;
 
@@ -94,21 +99,45 @@ export async function hapusJurnalReferensi(tx: TxClient, referensiTipe: string, 
 
 /**
  * Posting jurnal otomatis untuk transaksi PENGADAAN (barang masuk).
- * Asumsi sederhana: pembelian tunai.
- *   Debit  Persediaan Barang Dagang
- *   Kredit Kas
+ * Asumsi sederhana: pembelian tunai. `dpp` (Dasar Pengenaan Pajak) adalah
+ * subtotal SETELAH diskon tapi SEBELUM PPN — itulah nilai yang menambah
+ * Persediaan. PPN Masukan dicatat terpisah sebagai piutang pajak (bisa
+ * dikreditkan), bukan bagian dari nilai persediaan.
+ *   Debit  Persediaan Barang Dagang   (dpp)
+ *   Debit  PPN Masukan                (ppn, jika > 0)
+ *   Kredit Kas                        (dpp + ppn = total dibayar)
  * (Jika suatu saat dibutuhkan pembelian kredit/hutang, tinggal ganti akun
  * KREDIT ke Hutang Usaha — lihat KODE_AKUN.HUTANG_USAHA.)
  */
 export async function jurnalPengadaan(
   tx: TxClient,
-  params: { companyId: number; pengadaanId: number; nomor: string; tanggal: Date; total: number; userId: number }
+  params: {
+    companyId: number;
+    pengadaanId: number;
+    nomor: string;
+    tanggal: Date;
+    dpp: number;
+    ppn: number;
+    total: number;
+    userId: number;
+  }
 ) {
   if (params.total <= 0) return null;
   const [persediaanId, kasId] = await Promise.all([
     getAkunId(tx, KODE_AKUN.PERSEDIAAN, params.companyId),
     getAkunId(tx, KODE_AKUN.KAS, params.companyId),
   ]);
+
+  const lines: JurnalLine[] = [
+    { akunId: persediaanId, debit: params.dpp, keterangan: "Persediaan bertambah" },
+  ];
+
+  if (params.ppn > 0) {
+    const ppnMasukanId = await getAkunId(tx, KODE_AKUN.PPN_MASUKAN, params.companyId);
+    lines.push({ akunId: ppnMasukanId, debit: params.ppn, keterangan: "PPN Masukan 11%" });
+  }
+
+  lines.push({ akunId: kasId, kredit: params.total, keterangan: "Pembayaran tunai ke supplier" });
 
   return postJurnal(tx, {
     companyId: params.companyId,
@@ -117,19 +146,19 @@ export async function jurnalPengadaan(
     referensiTipe: "pengadaan",
     referensiId: params.pengadaanId,
     userId: params.userId,
-    lines: [
-      { akunId: persediaanId, debit: params.total, keterangan: "Persediaan bertambah" },
-      { akunId: kasId, kredit: params.total, keterangan: "Pembayaran tunai ke supplier" },
-    ],
+    lines,
   });
 }
 
 /**
  * Posting jurnal otomatis untuk transaksi PENJUALAN (barang keluar).
- * Dua pasang entri sekaligus (standar akuntansi dagang):
- *   1) Pengakuan pendapatan — Debit Kas, Kredit Pendapatan Penjualan (sebesar harga jual)
- *   2) Pengakuan HPP        — Debit HPP, Kredit Persediaan (sebesar harga beli / cost)
- * `hpp` dihitung dari qty x harga beli barang saat transaksi terjadi.
+ * `dpp` (Dasar Pengenaan Pajak) adalah subtotal SETELAH diskon tapi SEBELUM
+ * PPN — itulah nilai yang diakui sebagai Pendapatan. PPN Keluaran dicatat
+ * terpisah sebagai utang pajak ke kas negara, bukan bagian dari pendapatan.
+ *   1) Pengakuan penjualan — Debit Kas (dpp + ppn), Kredit Pendapatan Penjualan (dpp),
+ *                            Kredit PPN Keluaran (ppn, jika > 0)
+ *   2) Pengakuan HPP       — Debit HPP, Kredit Persediaan (sebesar harga beli / cost,
+ *                            tidak dipengaruhi diskon/PPN sisi jual)
  */
 export async function jurnalPenjualan(
   tx: TxClient,
@@ -138,6 +167,8 @@ export async function jurnalPenjualan(
     penjualanId: number;
     nomor: string;
     tanggal: Date;
+    dpp: number;
+    ppn: number;
     total: number;
     hpp: number;
     userId: number;
@@ -153,8 +184,13 @@ export async function jurnalPenjualan(
 
   const lines: JurnalLine[] = [
     { akunId: kasId, debit: params.total, keterangan: "Penerimaan tunai dari pelanggan" },
-    { akunId: pendapatanId, kredit: params.total, keterangan: "Pendapatan penjualan" },
+    { akunId: pendapatanId, kredit: params.dpp, keterangan: "Pendapatan penjualan" },
   ];
+
+  if (params.ppn > 0) {
+    const ppnKeluaranId = await getAkunId(tx, KODE_AKUN.PPN_KELUARAN, params.companyId);
+    lines.push({ akunId: ppnKeluaranId, kredit: params.ppn, keterangan: "PPN Keluaran 11%" });
+  }
 
   if (params.hpp > 0) {
     lines.push(

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requirePermission, getCompanyId } from "@/lib/apiAuth";
-import { jurnalPengadaan, hapusJurnalReferensi } from "@/lib/akuntansi";
+import { jurnalPengadaan, hapusJurnalReferensi, PPN_RATE } from "@/lib/akuntansi";
 import { z } from "zod";
 
 const itemSchema = z.object({
@@ -14,8 +14,20 @@ const updateSchema = z.object({
   tanggal: z.string().optional(),
   supplierId: z.number().nullable().optional(),
   catatan: z.string().optional().nullable(),
+  diskonPersen: z.number().min(0).max(100).optional(),
+  pakaiPpn: z.boolean().optional(),
   items: z.array(itemSchema).min(1, "Minimal 1 item barang"),
 });
+
+/** Hitung subtotal, diskon, PPN, dan grand total dari daftar item + persen diskon. */
+function hitungRingkasan(items: { qty: number; hargaSatuan: number }[], diskonPersen: number, pakaiPpn: boolean) {
+  const subtotal = items.reduce((sum, item) => sum + item.qty * item.hargaSatuan, 0);
+  const diskonNominal = Math.round((subtotal * diskonPersen) / 100);
+  const dpp = subtotal - diskonNominal;
+  const ppn = pakaiPpn ? Math.round(dpp * PPN_RATE) : 0;
+  const total = dpp + ppn;
+  return { subtotal, diskonNominal, dpp, ppn, total };
+}
 
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
   const { error, session } = await requirePermission("pengadaan.view");
@@ -44,7 +56,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
   if (!parsed.success) {
     return NextResponse.json({ message: "Data tidak valid", issues: parsed.error.issues }, { status: 400 });
   }
-  const { items, supplierId, catatan, tanggal } = parsed.data;
+  const { items, supplierId, catatan, tanggal, diskonPersen = 0, pakaiPpn = true } = parsed.data;
 
   // Pengadaan menambah stok saat dibuat. Saat diedit, kita hitung selisih
   // (delta) qty per barang antara data lama vs data baru, lalu terapkan
@@ -78,7 +90,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     if (delta !== 0) deltas.push({ barangId: bid, delta });
   }
 
-  const total = items.reduce((sum, item) => sum + item.qty * item.hargaSatuan, 0);
+  const { subtotal, diskonNominal, dpp, ppn, total } = hitungRingkasan(items, diskonPersen, pakaiPpn);
 
   const result = await prisma.$transaction(async (tx) => {
     for (const d of deltas) {
@@ -93,6 +105,10 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
         tanggal: tanggal ? new Date(tanggal) : existing.tanggal,
         supplierId: supplierId ?? null,
         catatan,
+        subtotal,
+        diskonPersen,
+        diskonNominal,
+        ppn,
         total,
         detail: {
           create: items.map((item) => ({
@@ -115,6 +131,8 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
         pengadaanId: id,
         nomor: updated.nomor,
         tanggal: updated.tanggal,
+        dpp,
+        ppn,
         total,
         userId: Number(session!.user.id),
       });

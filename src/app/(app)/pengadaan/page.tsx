@@ -2,10 +2,9 @@
 
 import { useEffect, useMemo, useState, useCallback, FormEvent } from "react";
 import { useSession } from "next-auth/react";
-import { Plus, Pencil, Trash2, Loader2, XCircle, Eye } from "lucide-react";
+import { Plus, Pencil, Trash2, Loader2, XCircle, Eye, Building2 } from "lucide-react";
 import DataTable, { Column } from "@/components/DataTable";
 import Modal from "@/components/Modal";
-import Badge from "@/components/Badge";
 import LiveIndicator from "@/components/LiveIndicator";
 import { can } from "@/lib/rbac";
 import { useAutoRefresh, notifyDataChanged } from "@/lib/useAutoRefresh";
@@ -19,6 +18,10 @@ type Pengadaan = {
   tanggal: string;
   supplier: Supplier | null;
   user: { name: string };
+  subtotal: string | number;
+  diskonPersen: string | number;
+  diskonNominal: string | number;
+  ppn: string | number;
   total: string | number;
   catatan: string | null;
   detail: Item[];
@@ -26,7 +29,10 @@ type Pengadaan = {
 
 type Row = { barangId: string; qty: string; hargaSatuan: string };
 const emptyRow: Row = { barangId: "", qty: "1", hargaSatuan: "" };
+const emptySupplierForm = { nama: "", alamat: "", telepon: "", email: "" };
 const rupiah = (v: number) => `Rp ${Math.round(v).toLocaleString("id-ID")}`;
+const NEW_SUPPLIER = "__new__";
+const PPN_RATE = 0.11;
 
 export default function PengadaanPage() {
   const { data: session } = useSession();
@@ -49,7 +55,15 @@ export default function PengadaanPage() {
   const [supplierId, setSupplierId] = useState("");
   const [tanggal, setTanggal] = useState(() => new Date().toISOString().slice(0, 10));
   const [catatan, setCatatan] = useState("");
+  const [diskonPersen, setDiskonPersen] = useState("0");
+  const [pakaiPpn, setPakaiPpn] = useState(true);
   const [rows, setRows] = useState<Row[]>([{ ...emptyRow }]);
+
+  // Quick-add supplier langsung dari form transaksi.
+  const [supplierModalOpen, setSupplierModalOpen] = useState(false);
+  const [supplierForm, setSupplierForm] = useState(emptySupplierForm);
+  const [savingSupplier, setSavingSupplier] = useState(false);
+  const [supplierError, setSupplierError] = useState("");
 
   const loadData = useCallback(async () => {
     setRefreshing(true);
@@ -94,6 +108,8 @@ export default function PengadaanPage() {
     setSupplierId("");
     setTanggal(new Date().toISOString().slice(0, 10));
     setCatatan("");
+    setDiskonPersen("0");
+    setPakaiPpn(true);
     setRows([{ ...emptyRow }]);
     setError("");
     setModalOpen(true);
@@ -104,6 +120,8 @@ export default function PengadaanPage() {
     setSupplierId(p.supplier ? String(p.supplier.id) : "");
     setTanggal(new Date(p.tanggal).toISOString().slice(0, 10));
     setCatatan(p.catatan ?? "");
+    setDiskonPersen(String(p.diskonPersen ?? 0));
+    setPakaiPpn(Number(p.ppn) > 0);
     setRows([
       ...p.detail.map((d) => ({
         barangId: String(d.barang.id),
@@ -134,7 +152,51 @@ export default function PengadaanPage() {
     });
   }
 
-  const total = rows.reduce((sum, r) => sum + (Number(r.qty) || 0) * (Number(r.hargaSatuan) || 0), 0);
+  function handleSupplierSelect(value: string) {
+    if (value === NEW_SUPPLIER) {
+      setSupplierForm(emptySupplierForm);
+      setSupplierError("");
+      setSupplierModalOpen(true);
+      return;
+    }
+    setSupplierId(value);
+  }
+
+  async function handleSupplierSubmit(e: FormEvent) {
+    e.preventDefault();
+    setSavingSupplier(true);
+    setSupplierError("");
+
+    const res = await fetch("/api/supplier", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(supplierForm),
+    });
+    const data = await res.json().catch(() => ({}));
+    setSavingSupplier(false);
+
+    if (!res.ok) {
+      setSupplierError(data.message || "Gagal menambahkan supplier.");
+      return;
+    }
+
+    // Supplier baru langsung masuk daftar & otomatis terpilih di form transaksi.
+    setSuppliers((prev) => [...prev, data]);
+    setSupplierId(String(data.id));
+    setSupplierModalOpen(false);
+  }
+
+  // Ringkasan subtotal -> diskon -> DPP -> PPN 11% -> total, dihitung ulang
+  // otomatis setiap kali item atau persen diskon berubah.
+  const ringkasan = useMemo(() => {
+    const subtotal = rows.reduce((sum, r) => sum + (Number(r.qty) || 0) * (Number(r.hargaSatuan) || 0), 0);
+    const persen = Math.min(100, Math.max(0, Number(diskonPersen) || 0));
+    const diskonNominal = Math.round((subtotal * persen) / 100);
+    const dpp = subtotal - diskonNominal;
+    const ppn = pakaiPpn ? Math.round(dpp * PPN_RATE) : 0;
+    const total = dpp + ppn;
+    return { subtotal, diskonNominal, dpp, ppn, total };
+  }, [rows, diskonPersen, pakaiPpn]);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -154,6 +216,8 @@ export default function PengadaanPage() {
         supplierId: supplierId ? Number(supplierId) : null,
         tanggal,
         catatan: catatan || null,
+        diskonPersen: Math.min(100, Math.max(0, Number(diskonPersen) || 0)),
+        pakaiPpn,
         items: validRows.map((r) => ({
           barangId: Number(r.barangId),
           qty: Number(r.qty),
@@ -263,13 +327,14 @@ export default function PengadaanPage() {
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <label className="label">Supplier</label>
-              <select className="input" value={supplierId} onChange={(e) => setSupplierId(e.target.value)}>
+              <select className="input" value={supplierId} onChange={(e) => handleSupplierSelect(e.target.value)}>
                 <option value="">Tanpa supplier</option>
                 {suppliers.map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.nama}
                   </option>
                 ))}
+                <option value={NEW_SUPPLIER}>+ Tambah Supplier Baru...</option>
               </select>
             </div>
             <div>
@@ -350,9 +415,53 @@ export default function PengadaanPage() {
             <textarea className="input" rows={2} value={catatan} onChange={(e) => setCatatan(e.target.value)} />
           </div>
 
-          <div className="flex items-center justify-between rounded-lg bg-slate-50 px-4 py-3">
-            <span className="text-sm font-medium text-slate-600">Total Pengadaan</span>
-            <span className="text-lg font-semibold text-slate-800">{rupiah(total)}</span>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <label className="label">Diskon (%)</label>
+              <input
+                type="number"
+                inputMode="decimal"
+                min={0}
+                max={100}
+                className="input"
+                value={diskonPersen}
+                onChange={(e) => setDiskonPersen(e.target.value)}
+              />
+            </div>
+            <div className="flex items-end pb-2.5">
+              <label className="flex items-center gap-2 text-sm text-slate-600">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                  checked={pakaiPpn}
+                  onChange={(e) => setPakaiPpn(e.target.checked)}
+                />
+                Kenakan PPN 11%
+              </label>
+            </div>
+          </div>
+
+          <div className="space-y-1.5 rounded-lg bg-slate-50 px-4 py-3">
+            <div className="flex items-center justify-between text-sm text-slate-500">
+              <span>Subtotal</span>
+              <span>{rupiah(ringkasan.subtotal)}</span>
+            </div>
+            {ringkasan.diskonNominal > 0 && (
+              <div className="flex items-center justify-between text-sm text-slate-500">
+                <span>Diskon ({diskonPersen || 0}%)</span>
+                <span>- {rupiah(ringkasan.diskonNominal)}</span>
+              </div>
+            )}
+            {pakaiPpn && (
+              <div className="flex items-center justify-between text-sm text-slate-500">
+                <span>PPN 11%</span>
+                <span>+ {rupiah(ringkasan.ppn)}</span>
+              </div>
+            )}
+            <div className="flex items-center justify-between border-t border-slate-200 pt-1.5 text-sm font-semibold text-slate-800">
+              <span>Total Pengadaan</span>
+              <span>{rupiah(ringkasan.total)}</span>
+            </div>
           </div>
 
           {error && <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</div>}
@@ -364,6 +473,69 @@ export default function PengadaanPage() {
             <button type="submit" disabled={saving} className="btn-primary">
               {saving && <Loader2 className="h-4 w-4 animate-spin" />}
               {editingId ? "Simpan Perubahan" : "Simpan Transaksi"}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Quick-add Supplier */}
+      <Modal open={supplierModalOpen} onClose={() => setSupplierModalOpen(false)} title="Tambah Supplier Baru">
+        <form onSubmit={handleSupplierSubmit} className="space-y-4">
+          <div>
+            <label className="label">Nama Supplier</label>
+            <input
+              required
+              autoFocus
+              className="input"
+              value={supplierForm.nama}
+              onChange={(e) => setSupplierForm({ ...supplierForm, nama: e.target.value })}
+              placeholder="Contoh: PT Sumber Makmur"
+            />
+          </div>
+          <div>
+            <label className="label">Alamat (opsional)</label>
+            <textarea
+              className="input"
+              rows={2}
+              value={supplierForm.alamat}
+              onChange={(e) => setSupplierForm({ ...supplierForm, alamat: e.target.value })}
+            />
+          </div>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <label className="label">Telepon (opsional)</label>
+              <input
+                className="input"
+                inputMode="tel"
+                value={supplierForm.telepon}
+                onChange={(e) => setSupplierForm({ ...supplierForm, telepon: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className="label">Email (opsional)</label>
+              <input
+                type="email"
+                className="input"
+                value={supplierForm.email}
+                onChange={(e) => setSupplierForm({ ...supplierForm, email: e.target.value })}
+              />
+            </div>
+          </div>
+
+          {supplierError && (
+            <div className="flex items-center gap-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">
+              <Building2 className="h-4 w-4 shrink-0" />
+              {supplierError}
+            </div>
+          )}
+
+          <div className="flex justify-end gap-2 pt-2">
+            <button type="button" onClick={() => setSupplierModalOpen(false)} className="btn-secondary">
+              Batal
+            </button>
+            <button type="submit" disabled={savingSupplier} className="btn-primary">
+              {savingSupplier && <Loader2 className="h-4 w-4 animate-spin" />}
+              Simpan Supplier
             </button>
           </div>
         </form>
@@ -401,9 +573,27 @@ export default function PengadaanPage() {
                 </div>
               ))}
             </div>
-            <div className="flex items-center justify-between px-1">
-              <span className="text-sm font-medium text-slate-600">Total</span>
-              <span className="text-base font-semibold text-slate-800">{rupiah(Number(detailOpen.total))}</span>
+            <div className="space-y-1.5 rounded-lg bg-slate-50 px-4 py-3">
+              <div className="flex items-center justify-between text-sm text-slate-500">
+                <span>Subtotal</span>
+                <span>{rupiah(Number(detailOpen.subtotal))}</span>
+              </div>
+              {Number(detailOpen.diskonNominal) > 0 && (
+                <div className="flex items-center justify-between text-sm text-slate-500">
+                  <span>Diskon ({Number(detailOpen.diskonPersen)}%)</span>
+                  <span>- {rupiah(Number(detailOpen.diskonNominal))}</span>
+                </div>
+              )}
+              {Number(detailOpen.ppn) > 0 && (
+                <div className="flex items-center justify-between text-sm text-slate-500">
+                  <span>PPN 11%</span>
+                  <span>+ {rupiah(Number(detailOpen.ppn))}</span>
+                </div>
+              )}
+              <div className="flex items-center justify-between border-t border-slate-200 pt-1.5 text-sm font-semibold text-slate-800">
+                <span>Total</span>
+                <span>{rupiah(Number(detailOpen.total))}</span>
+              </div>
             </div>
             {detailOpen.catatan && (
               <div className="rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600">{detailOpen.catatan}</div>

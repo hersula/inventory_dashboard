@@ -27,8 +27,8 @@ Aplikasi ini bersifat **multi-tenant** — satu deployment bisa melayani banyak 
 | **Login** | Autentikasi email/password (NextAuth, JWT session), menyertakan konteks perusahaan (`companyId`) di setiap sesi |
 | **Dashboard** | Analisa barang **milik perusahaan yang login**: total jenis barang, nilai stok, tren penjualan vs pengadaan 6 bulan, komposisi kategori, barang terlaris, barang stok menipis |
 | **Master Barang** | CRUD data barang: kode, nama, kategori, satuan, harga beli/jual, stok, stok minimum |
-| **Pengadaan Barang** | Transaksi barang masuk (dari supplier). Menambah stok otomatis, riwayat transaksi, **edit transaksi** (stok disesuaikan otomatis berdasarkan selisih qty), batal transaksi (stok dikembalikan) |
-| **Penjualan Barang** | Transaksi barang keluar. Mengurangi stok otomatis dengan validasi stok tersedia, riwayat transaksi, **edit transaksi** (stok disesuaikan otomatis, termasuk validasi jika qty baru melebihi stok tersedia), batal transaksi |
+| **Pengadaan Barang** | Transaksi barang masuk (dari supplier), dengan **diskon (%) & PPN 11%**. Menambah stok otomatis, quick-add supplier langsung dari form, riwayat transaksi, **edit transaksi** (stok disesuaikan otomatis berdasarkan selisih qty), batal transaksi (stok dikembalikan) |
+| **Penjualan Barang** | Transaksi barang keluar, dengan **diskon (%) & PPN 11%**. Mengurangi stok otomatis dengan validasi stok tersedia, quick-add pelanggan langsung dari form, riwayat transaksi, **edit transaksi** (stok disesuaikan otomatis, termasuk validasi jika qty baru melebihi stok tersedia), batal transaksi |
 | **Manajemen User** | CRUD user & role — **dibatasi hanya untuk user dalam perusahaan yang sama** (khusus Administrator) |
 | **Akuntansi** | Chart of Akun (COA), Jurnal Umum (manual + **otomatis** dari transaksi Pengadaan/Penjualan lewat double-entry bookkeeping), dan Laporan Keuangan (Laba Rugi & Neraca Saldo) |
 
@@ -116,6 +116,8 @@ npm run dev
 Buka [http://localhost:3000](http://localhost:3000) — Anda akan diarahkan ke halaman login. Untuk instalasi baru, buka [http://localhost:3000/register](http://localhost:3000/register) untuk mendaftarkan perusahaan pertama Anda (atau pakai akun demo dari seed di atas).
 
 > **Catatan untuk instalasi yang sudah berjalan sebelum fitur multi-tenant ditambahkan:** migrasi ini menambahkan tabel `Company` dan kolom `companyId` (NOT NULL) ke hampir semua tabel. Prisma akan meminta nilai default saat migrasi karena tabel lama sudah berisi data. Cara teraman: buat 1 baris `Company` manual dulu, lalu isi `companyId` semua tabel lama dengan ID perusahaan tersebut sebelum menjadikan kolomnya NOT NULL — atau paling sederhana, mulai dari database kosong (`DROP DATABASE` lalu buat ulang) jika datanya masih data uji coba. Setelah migrasi, **semua user yang sedang login harus login ulang** karena sesi/JWT lama belum memuat `companyId`.
+
+> **Catatan untuk instalasi yang sudah berjalan sebelum fitur diskon & PPN ditambahkan:** migrasi ini menambahkan kolom `subtotal`, `diskonPersen`, `diskonNominal`, `ppn` ke tabel `Pengadaan`/`Penjualan` — semuanya punya nilai default `0` sehingga migrasi aman untuk data lama (tidak perlu isi manual). Yang perlu dilakukan manual: tambahkan 2 akun baru — **PPN Masukan** (`1104`, Aset) dan **PPN Keluaran** (`2102`, Kewajiban) — di modul Akuntansi > Chart of Akun untuk setiap perusahaan yang sudah terdaftar, supaya jurnal otomatis PPN bisa ikut terposting pada transaksi baru.
 
 ### Build untuk produksi
 
@@ -246,18 +248,41 @@ Hanya role dengan permission `pengadaan.manage` / `penjualan.manage` (ADMIN, MAN
 
 Form transaksi (baik saat membuat baru maupun edit) mendukung banyak baris barang. Sejak versi ini, baris kosong baru **muncul otomatis** begitu Anda memilih barang di baris terakhir — jadi Anda tidak perlu mengingat untuk menekan tombol "+ Tambah baris" secara manual setiap kali ingin menambah barang lain. Tombol "+ Tambah baris" tetap tersedia (kini dengan gaya lebih menonjol) untuk menambah baris kosong tanpa langsung memilih barang. Label "Daftar Barang" juga menampilkan penghitung real-time jumlah barang yang sudah dipilih, sehingga mudah memastikan semua barang benar-benar masuk sebelum menekan "Simpan".
 
+### Diskon & PPN 11%
+
+Form Pengadaan dan Penjualan sekarang punya 2 pengaturan tambahan di bawah daftar barang:
+
+- **Diskon (%)** — persentase diskon dari subtotal (0–100%). Nominalnya dihitung otomatis dan ditampilkan di ringkasan.
+- **Kenakan PPN 11%** — centang untuk mengenakan PPN 11% (default aktif). PPN dihitung dari **DPP** (Dasar Pengenaan Pajak) yaitu subtotal setelah dikurangi diskon, bukan dari subtotal mentah.
+
+Urutan perhitungannya: `Subtotal → (- Diskon) → DPP → (+ PPN 11%) → Total`. Ringkasan ini ditampilkan real-time di form maupun di modal detail transaksi.
+
+Nilai `subtotal`, `diskonPersen`, `diskonNominal`, `ppn`, dan `total` (grand total) semuanya disimpan terpisah di database (bukan cuma total akhir), supaya riwayat transaksi tetap bisa ditelusuri berapa diskon/pajak yang berlaku saat itu meski persentase diskon/aturan pajak berubah di kemudian hari.
+
+**Dampak ke Akuntansi** — jurnal otomatis (lihat bagian [Modul Akuntansi](#modul-akuntansi)) memisahkan PPN dari nilai persediaan/pendapatan, sesuai praktik akuntansi pajak:
+- Pengadaan: `Debit Persediaan` sebesar **DPP** (bukan termasuk PPN) + `Debit PPN Masukan` sebesar PPN, lawannya `Kredit Kas` sebesar total yang benar-benar dibayar.
+- Penjualan: `Kredit Pendapatan Penjualan` sebesar **DPP** + `Kredit PPN Keluaran` sebesar PPN, lawannya `Debit Kas` sebesar total yang diterima. HPP (harga pokok) tetap dihitung dari harga beli barang, tidak terpengaruh diskon/PPN sisi jual.
+
+Ini butuh 2 akun tambahan di Chart of Akun: **PPN Masukan** (`1104`, Aset) dan **PPN Keluaran** (`2102`, Kewajiban) — sudah termasuk di `src/lib/defaultAkun.ts` sehingga otomatis dibuat untuk perusahaan baru. Untuk perusahaan yang sudah terdaftar sebelum fitur ini ada, tambahkan kedua akun tersebut secara manual di modul Akuntansi > Chart of Akun agar jurnal PPN bisa terposting (jika belum ada, posting jurnal PPN akan gagal secara diam-diam — lihat catatan fail-safe di bagian Modul Akuntansi).
+
+### Tambah Supplier / Pelanggan Langsung dari Form Transaksi
+
+Dropdown "Supplier" (di form Pengadaan) dan "Pelanggan" (di form Penjualan) punya opsi **"+ Tambah Supplier/Pelanggan Baru..."** di baris paling bawah. Memilihnya membuka form kecil (nama, alamat, telepon, khusus supplier ada email) tanpa perlu keluar dari form transaksi yang sedang diisi — begitu tersimpan, data baru langsung otomatis terpilih dan form transaksi tetap terisi seperti semula.
+
 ## Modul Akuntansi
 
 Modul ini menerapkan **double-entry bookkeeping** (akuntansi berpasangan) sederhana yang terintegrasi dengan modul operasional, terdiri dari 3 halaman:
 
 ### 1. Chart of Akun (`/akuntansi`)
-Daftar akun keuangan (kode, nama, tipe: Aset/Kewajiban/Modal/Pendapatan/Beban, dan saldo normal). Sistem butuh 4 akun dengan kode tertentu (dibuat otomatis lewat `npm run prisma:seed`, lihat `src/lib/akuntansi.ts` → `KODE_AKUN`) untuk posting jurnal otomatis:
+Daftar akun keuangan (kode, nama, tipe: Aset/Kewajiban/Modal/Pendapatan/Beban, dan saldo normal). Sistem butuh 6 akun dengan kode tertentu (dibuat otomatis lewat `npm run prisma:seed` atau saat perusahaan baru mendaftar, lihat `src/lib/akuntansi.ts` → `KODE_AKUN`) untuk posting jurnal otomatis:
 
 | Kode | Akun | Dipakai untuk |
 |---|---|---|
 | 1101 | Kas | Sisi kas di setiap transaksi pengadaan/penjualan tunai |
-| 1103 | Persediaan Barang Dagang | Nilai stok barang dagang |
-| 4101 | Pendapatan Penjualan | Pendapatan dari transaksi penjualan |
+| 1103 | Persediaan Barang Dagang | Nilai stok barang dagang (sebesar DPP, tidak termasuk PPN) |
+| 1104 | PPN Masukan | PPN dari transaksi Pengadaan (piutang pajak, bisa dikreditkan) |
+| 2102 | PPN Keluaran | PPN dari transaksi Penjualan (utang pajak ke kas negara) |
+| 4101 | Pendapatan Penjualan | Pendapatan dari transaksi penjualan (sebesar DPP, tidak termasuk PPN) |
 | 5101 | Harga Pokok Penjualan (HPP) | Beban pokok atas barang yang terjual |
 
 Akun lain (Piutang, Hutang Usaha, Modal, Beban Operasional/Gaji/Sewa) sudah disiapkan di seed sebagai contoh dan bisa dipakai untuk jurnal manual.
@@ -268,14 +293,15 @@ Menampilkan seluruh jurnal — baik yang **otomatis** dibuat sistem maupun **man
 - **Otomatis** — setiap kali transaksi Pengadaan atau Penjualan dibuat, diedit, atau dibatalkan, sistem otomatis memposting/menyesuaikan jurnalnya (lihat detail di bawah). Jurnal jenis ini tidak bisa dihapus langsung dari sini — ubah lewat transaksi sumbernya di modul Pengadaan/Penjualan agar datanya tetap konsisten.
 - **Manual** — untuk mencatat transaksi keuangan di luar pengadaan/penjualan (mis. bayar gaji, sewa, setoran modal). Form mendukung banyak baris debit/kredit dan memvalidasi bahwa **total debit harus sama dengan total kredit** sebelum bisa disimpan.
 
-**Logika posting otomatis** (lihat `src/lib/akuntansi.ts`):
+**Logika posting otomatis** (lihat `src/lib/akuntansi.ts`), memperhitungkan diskon & PPN 11% dari transaksi (lihat [bagian Diskon & PPN](#diskon--ppn-11)):
 
-- **Pengadaan** (asumsi pembelian tunai): `Debit Persediaan` / `Kredit Kas` sebesar total pengadaan.
-- **Penjualan**: dua pasang entri sekaligus —
-  1. Pengakuan pendapatan: `Debit Kas` / `Kredit Pendapatan Penjualan` sebesar total jual.
-  2. Pengakuan HPP: `Debit HPP` / `Kredit Persediaan` sebesar qty × **harga beli** barang saat itu.
+- **Pengadaan** (asumsi pembelian tunai): `Debit Persediaan` sebesar DPP, `Debit PPN Masukan` sebesar PPN (jika ada), `Kredit Kas` sebesar total yang dibayar.
+- **Penjualan**: tiga bagian sekaligus —
+  1. Pengakuan pendapatan: `Debit Kas` sebesar total diterima, `Kredit Pendapatan Penjualan` sebesar DPP.
+  2. Pengakuan PPN: `Kredit PPN Keluaran` sebesar PPN (jika ada).
+  3. Pengakuan HPP: `Debit HPP` / `Kredit Persediaan` sebesar qty × **harga beli** barang saat itu (tidak terpengaruh diskon/PPN sisi jual).
 
-Posting bersifat **fail-safe**: jika Chart of Akun belum disiapkan (instalasi baru yang belum di-seed), transaksi pengadaan/penjualan tetap berhasil disimpan — jurnalnya cukup diposting manual belakangan. Errornya dicatat di server log (`console.error`), tidak menggagalkan transaksi operasional.
+Posting bersifat **fail-safe**: jika Chart of Akun belum disiapkan (instalasi baru yang belum di-seed, atau akun PPN Masukan/Keluaran belum dibuat), transaksi pengadaan/penjualan tetap berhasil disimpan — jurnalnya cukup diposting manual belakangan. Errornya dicatat di server log (`console.error`), tidak menggagalkan transaksi operasional.
 
 ### 3. Laporan Keuangan (`/akuntansi/laporan`)
 - **Laba Rugi** — total Pendapatan dikurangi total Beban (termasuk HPP) dalam rentang tanggal yang dipilih (default: bulan berjalan).

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requirePermission, getCompanyId } from "@/lib/apiAuth";
-import { jurnalPenjualan } from "@/lib/akuntansi";
+import { jurnalPenjualan, PPN_RATE } from "@/lib/akuntansi";
 import { z } from "zod";
 
 const itemSchema = z.object({
@@ -14,6 +14,8 @@ const penjualanSchema = z.object({
   tanggal: z.string().optional(),
   pelangganId: z.number().nullable().optional(),
   catatan: z.string().optional().nullable(),
+  diskonPersen: z.number().min(0).max(100).optional(),
+  pakaiPpn: z.boolean().optional(),
   items: z.array(itemSchema).min(1, "Minimal 1 item barang"),
 });
 
@@ -24,6 +26,16 @@ async function generateNomor(companyId: number) {
     where: { companyId, nomor: { startsWith: prefix } },
   });
   return `${prefix}-${String(count + 1).padStart(3, "0")}`;
+}
+
+/** Hitung subtotal, diskon, PPN, dan grand total dari daftar item + persen diskon. */
+function hitungRingkasan(items: { qty: number; hargaSatuan: number }[], diskonPersen: number, pakaiPpn: boolean) {
+  const subtotal = items.reduce((sum, item) => sum + item.qty * item.hargaSatuan, 0);
+  const diskonNominal = Math.round((subtotal * diskonPersen) / 100);
+  const dpp = subtotal - diskonNominal; // Dasar Pengenaan Pajak
+  const ppn = pakaiPpn ? Math.round(dpp * PPN_RATE) : 0;
+  const total = dpp + ppn;
+  return { subtotal, diskonNominal, dpp, ppn, total };
 }
 
 export async function GET(req: NextRequest) {
@@ -57,7 +69,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ message: "Data tidak valid", issues: parsed.error.issues }, { status: 400 });
   }
 
-  const { items, pelangganId, catatan, tanggal } = parsed.data;
+  const { items, pelangganId, catatan, tanggal, diskonPersen = 0, pakaiPpn = true } = parsed.data;
 
   const barangIds = items.map((i) => i.barangId);
   // companyId di sini penting: mencegah user menjual barangId milik perusahaan lain.
@@ -76,9 +88,10 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  const total = items.reduce((sum, item) => sum + item.qty * item.hargaSatuan, 0);
+  const { subtotal, diskonNominal, dpp, ppn, total } = hitungRingkasan(items, diskonPersen, pakaiPpn);
   // HPP (harga pokok penjualan) dihitung dari harga BELI barang saat ini,
-  // bukan harga jual — dipakai untuk jurnal otomatis & laporan laba rugi.
+  // bukan harga jual, dan TIDAK dipengaruhi diskon/PPN sisi jual — dipakai
+  // untuk jurnal otomatis & laporan laba rugi.
   const hpp = items.reduce((sum, item) => {
     const barang = barangList.find((b) => b.id === item.barangId);
     return sum + item.qty * Number(barang?.hargaBeli ?? 0);
@@ -94,6 +107,10 @@ export async function POST(req: NextRequest) {
         pelangganId: pelangganId ?? null,
         userId: Number(session!.user.id),
         catatan,
+        subtotal,
+        diskonPersen,
+        diskonNominal,
+        ppn,
         total,
         detail: {
           create: items.map((item) => ({
@@ -122,6 +139,8 @@ export async function POST(req: NextRequest) {
         penjualanId: penjualan.id,
         nomor: penjualan.nomor,
         tanggal: penjualan.tanggal,
+        dpp,
+        ppn,
         total,
         hpp,
         userId: Number(session!.user.id),

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requirePermission, getCompanyId } from "@/lib/apiAuth";
-import { jurnalPengadaan } from "@/lib/akuntansi";
+import { jurnalPengadaan, PPN_RATE } from "@/lib/akuntansi";
 import { z } from "zod";
 
 const itemSchema = z.object({
@@ -14,6 +14,8 @@ const pengadaanSchema = z.object({
   tanggal: z.string().optional(),
   supplierId: z.number().nullable().optional(),
   catatan: z.string().optional().nullable(),
+  diskonPersen: z.number().min(0).max(100).optional(),
+  pakaiPpn: z.boolean().optional(),
   items: z.array(itemSchema).min(1, "Minimal 1 item barang"),
 });
 
@@ -24,6 +26,16 @@ async function generateNomor(companyId: number) {
     where: { companyId, nomor: { startsWith: prefix } },
   });
   return `${prefix}-${String(count + 1).padStart(3, "0")}`;
+}
+
+/** Hitung subtotal, diskon, PPN, dan grand total dari daftar item + persen diskon. */
+function hitungRingkasan(items: { qty: number; hargaSatuan: number }[], diskonPersen: number, pakaiPpn: boolean) {
+  const subtotal = items.reduce((sum, item) => sum + item.qty * item.hargaSatuan, 0);
+  const diskonNominal = Math.round((subtotal * diskonPersen) / 100);
+  const dpp = subtotal - diskonNominal; // Dasar Pengenaan Pajak
+  const ppn = pakaiPpn ? Math.round(dpp * PPN_RATE) : 0;
+  const total = dpp + ppn;
+  return { subtotal, diskonNominal, dpp, ppn, total };
 }
 
 export async function GET(req: NextRequest) {
@@ -57,7 +69,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ message: "Data tidak valid", issues: parsed.error.issues }, { status: 400 });
   }
 
-  const { items, supplierId, catatan, tanggal } = parsed.data;
+  const { items, supplierId, catatan, tanggal, diskonPersen = 0, pakaiPpn = true } = parsed.data;
 
   // Pastikan semua barang yang dipilih benar-benar milik perusahaan ini
   // (mencegah user mereferensikan barangId milik perusahaan lain).
@@ -67,7 +79,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ message: "Salah satu barang tidak ditemukan" }, { status: 400 });
   }
 
-  const total = items.reduce((sum, item) => sum + item.qty * item.hargaSatuan, 0);
+  const { subtotal, diskonNominal, dpp, ppn, total } = hitungRingkasan(items, diskonPersen, pakaiPpn);
   const nomor = await generateNomor(companyId);
 
   const result = await prisma.$transaction(async (tx) => {
@@ -79,6 +91,10 @@ export async function POST(req: NextRequest) {
         supplierId: supplierId ?? null,
         userId: Number(session!.user.id),
         catatan,
+        subtotal,
+        diskonPersen,
+        diskonNominal,
+        ppn,
         total,
         detail: {
           create: items.map((item) => ({
@@ -108,6 +124,8 @@ export async function POST(req: NextRequest) {
         pengadaanId: pengadaan.id,
         nomor: pengadaan.nomor,
         tanggal: pengadaan.tanggal,
+        dpp,
+        ppn,
         total,
         userId: Number(session!.user.id),
       });

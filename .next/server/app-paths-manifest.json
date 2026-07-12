@@ -1,14 +1,9 @@
 {
+  "/api/akun/route": "app/api/akun/route.js",
   "/api/auth/[...nextauth]/route": "app/api/auth/[...nextauth]/route.js",
-  "/api/dashboard/stats/route": "app/api/dashboard/stats/route.js",
-  "/api/barang/route": "app/api/barang/route.js",
-  "/api/kategori/route": "app/api/kategori/route.js",
-  "/login/page": "app/login/page.js",
-  "/register/page": "app/register/page.js",
-  "/api/register/route": "app/api/register/route.js",
-  "/(app)/dashboard/page": "app/(app)/dashboard/page.js",
   "/(app)/pengadaan/page": "app/(app)/pengadaan/page.js",
+  "/(app)/dashboard/page": "app/(app)/dashboard/page.js",
+  "/(app)/akuntansi/laporan/page": "app/(app)/akuntansi/laporan/page.js",
   "/(app)/master-barang/page": "app/(app)/master-barang/page.js",
-  "/(app)/penjualan/page": "app/(app)/penjualan/page.js",
-  "/(app)/users/page": "app/(app)/users/page.js"
+  "/(app)/akuntansi/page": "app/(app)/akuntansi/page.js"
 }

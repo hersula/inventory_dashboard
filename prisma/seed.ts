@@ -91,6 +91,7 @@ async function main() {
 
   const admin = await prisma.user.findUnique({ where: { email: "admin@toko.com" } });
   const allBarang = await prisma.barang.findMany({ where: { companyId: company.id } });
+  const PPN_RATE = 0.11;
 
   if (admin && allBarang.length > 0) {
     const now = new Date();
@@ -98,7 +99,9 @@ async function main() {
       const tanggal = new Date(now.getFullYear(), now.getMonth() - i, 12);
       const b1 = allBarang[i % allBarang.length];
       const qty1 = 5 + i;
-      const total1 = Number(b1.hargaJual) * qty1;
+      const subtotal1 = Number(b1.hargaJual) * qty1;
+      const ppn1 = Math.round(subtotal1 * PPN_RATE);
+      const total1 = subtotal1 + ppn1;
       const hpp1 = Number(b1.hargaBeli) * qty1;
 
       const nomorPj = `PJ-${tanggal.getFullYear()}${String(tanggal.getMonth() + 1).padStart(2, "0")}-${String(i + 1).padStart(3, "0")}`;
@@ -109,6 +112,10 @@ async function main() {
           tanggal,
           pelangganId: pelanggan.id,
           userId: admin.id,
+          subtotal: subtotal1,
+          diskonPersen: 0,
+          diskonNominal: 0,
+          ppn: ppn1,
           total: total1,
           detail: {
             create: [
@@ -116,7 +123,7 @@ async function main() {
                 barangId: b1.id,
                 qty: qty1,
                 hargaSatuan: b1.hargaJual,
-                subtotal: total1,
+                subtotal: subtotal1,
               },
             ],
           },
@@ -128,6 +135,8 @@ async function main() {
           penjualanId: penjualan.id,
           nomor: penjualan.nomor,
           tanggal: penjualan.tanggal,
+          dpp: subtotal1,
+          ppn: ppn1,
           total: total1,
           hpp: hpp1,
           userId: admin.id,
@@ -138,7 +147,9 @@ async function main() {
 
       const b2 = allBarang[(i + 2) % allBarang.length];
       const qty2 = 10 + i * 2;
-      const total2 = Number(b2.hargaBeli) * qty2;
+      const subtotal2 = Number(b2.hargaBeli) * qty2;
+      const ppn2 = Math.round(subtotal2 * PPN_RATE);
+      const total2 = subtotal2 + ppn2;
       const nomorPo = `PO-${tanggal.getFullYear()}${String(tanggal.getMonth() + 1).padStart(2, "0")}-${String(i + 1).padStart(3, "0")}`;
       const pengadaan = await prisma.pengadaan.create({
         data: {
@@ -147,6 +158,10 @@ async function main() {
           tanggal,
           supplierId: supplier.id,
           userId: admin.id,
+          subtotal: subtotal2,
+          diskonPersen: 0,
+          diskonNominal: 0,
+          ppn: ppn2,
           total: total2,
           detail: {
             create: [
@@ -154,7 +169,7 @@ async function main() {
                 barangId: b2.id,
                 qty: qty2,
                 hargaSatuan: b2.hargaBeli,
-                subtotal: total2,
+                subtotal: subtotal2,
               },
             ],
           },
@@ -166,6 +181,8 @@ async function main() {
           pengadaanId: pengadaan.id,
           nomor: pengadaan.nomor,
           tanggal: pengadaan.tanggal,
+          dpp: subtotal2,
+          ppn: ppn2,
           total: total2,
           userId: admin.id,
         });

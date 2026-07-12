@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, useCallback, FormEvent } from "react";
 import { useSession } from "next-auth/react";
-import { Plus, Pencil, Trash2, Loader2, XCircle, Eye } from "lucide-react";
+import { Plus, Pencil, Trash2, Loader2, XCircle, Eye, UserPlus } from "lucide-react";
 import DataTable, { Column } from "@/components/DataTable";
 import Modal from "@/components/Modal";
 import LiveIndicator from "@/components/LiveIndicator";
@@ -18,6 +18,10 @@ type Penjualan = {
   tanggal: string;
   pelanggan: Pelanggan | null;
   user: { name: string };
+  subtotal: string | number;
+  diskonPersen: string | number;
+  diskonNominal: string | number;
+  ppn: string | number;
   total: string | number;
   catatan: string | null;
   detail: Item[];
@@ -25,7 +29,10 @@ type Penjualan = {
 
 type Row = { barangId: string; qty: string; hargaSatuan: string };
 const emptyRow: Row = { barangId: "", qty: "1", hargaSatuan: "" };
+const emptyPelangganForm = { nama: "", alamat: "", telepon: "" };
 const rupiah = (v: number) => `Rp ${Math.round(v).toLocaleString("id-ID")}`;
+const NEW_PELANGGAN = "__new__";
+const PPN_RATE = 0.11;
 
 export default function PenjualanPage() {
   const { data: session } = useSession();
@@ -48,8 +55,16 @@ export default function PenjualanPage() {
   const [pelangganId, setPelangganId] = useState("");
   const [tanggal, setTanggal] = useState(() => new Date().toISOString().slice(0, 10));
   const [catatan, setCatatan] = useState("");
+  const [diskonPersen, setDiskonPersen] = useState("0");
+  const [pakaiPpn, setPakaiPpn] = useState(true);
   const [rows, setRows] = useState<Row[]>([{ ...emptyRow }]);
   const [originalQty, setOriginalQty] = useState<Record<number, number>>({});
+
+  // Quick-add pelanggan langsung dari form transaksi.
+  const [pelangganModalOpen, setPelangganModalOpen] = useState(false);
+  const [pelangganForm, setPelangganForm] = useState(emptyPelangganForm);
+  const [savingPelanggan, setSavingPelanggan] = useState(false);
+  const [pelangganError, setPelangganError] = useState("");
 
   const loadData = useCallback(async () => {
     setRefreshing(true);
@@ -94,6 +109,8 @@ export default function PenjualanPage() {
     setPelangganId("");
     setTanggal(new Date().toISOString().slice(0, 10));
     setCatatan("");
+    setDiskonPersen("0");
+    setPakaiPpn(true);
     setRows([{ ...emptyRow }]);
     setOriginalQty({});
     setError("");
@@ -105,6 +122,8 @@ export default function PenjualanPage() {
     setPelangganId(p.pelanggan ? String(p.pelanggan.id) : "");
     setTanggal(new Date(p.tanggal).toISOString().slice(0, 10));
     setCatatan(p.catatan ?? "");
+    setDiskonPersen(String(p.diskonPersen ?? 0));
+    setPakaiPpn(Number(p.ppn) > 0);
     setRows([
       ...p.detail.map((d) => ({
         barangId: String(d.barang.id),
@@ -138,7 +157,39 @@ export default function PenjualanPage() {
     });
   }
 
-  const total = rows.reduce((sum, r) => sum + (Number(r.qty) || 0) * (Number(r.hargaSatuan) || 0), 0);
+  function handlePelangganSelect(value: string) {
+    if (value === NEW_PELANGGAN) {
+      setPelangganForm(emptyPelangganForm);
+      setPelangganError("");
+      setPelangganModalOpen(true);
+      return;
+    }
+    setPelangganId(value);
+  }
+
+  async function handlePelangganSubmit(e: FormEvent) {
+    e.preventDefault();
+    setSavingPelanggan(true);
+    setPelangganError("");
+
+    const res = await fetch("/api/pelanggan", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(pelangganForm),
+    });
+    const data = await res.json().catch(() => ({}));
+    setSavingPelanggan(false);
+
+    if (!res.ok) {
+      setPelangganError(data.message || "Gagal menambahkan pelanggan.");
+      return;
+    }
+
+    // Pelanggan baru langsung masuk daftar & otomatis terpilih di form transaksi.
+    setPelangganList((prev) => [...prev, data]);
+    setPelangganId(String(data.id));
+    setPelangganModalOpen(false);
+  }
 
   function stokFor(barangId: string) {
     const barang = barangList.find((b) => b.id === Number(barangId));
@@ -149,6 +200,18 @@ export default function PenjualanPage() {
     const reserved = originalQty[barang.id] ?? 0;
     return barang.stok + reserved;
   }
+
+  // Ringkasan subtotal -> diskon -> DPP -> PPN 11% -> total, dihitung ulang
+  // otomatis setiap kali item atau persen diskon berubah.
+  const ringkasan = useMemo(() => {
+    const subtotal = rows.reduce((sum, r) => sum + (Number(r.qty) || 0) * (Number(r.hargaSatuan) || 0), 0);
+    const persen = Math.min(100, Math.max(0, Number(diskonPersen) || 0));
+    const diskonNominal = Math.round((subtotal * persen) / 100);
+    const dpp = subtotal - diskonNominal;
+    const ppn = pakaiPpn ? Math.round(dpp * PPN_RATE) : 0;
+    const total = dpp + ppn;
+    return { subtotal, diskonNominal, dpp, ppn, total };
+  }, [rows, diskonPersen, pakaiPpn]);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -168,6 +231,8 @@ export default function PenjualanPage() {
         pelangganId: pelangganId ? Number(pelangganId) : null,
         tanggal,
         catatan: catatan || null,
+        diskonPersen: Math.min(100, Math.max(0, Number(diskonPersen) || 0)),
+        pakaiPpn,
         items: validRows.map((r) => ({
           barangId: Number(r.barangId),
           qty: Number(r.qty),
@@ -277,13 +342,14 @@ export default function PenjualanPage() {
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <label className="label">Pelanggan</label>
-              <select className="input" value={pelangganId} onChange={(e) => setPelangganId(e.target.value)}>
+              <select className="input" value={pelangganId} onChange={(e) => handlePelangganSelect(e.target.value)}>
                 <option value="">Umum / Walk-in</option>
                 {pelangganList.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.nama}
                   </option>
                 ))}
+                <option value={NEW_PELANGGAN}>+ Tambah Pelanggan Baru...</option>
               </select>
             </div>
             <div>
@@ -375,9 +441,53 @@ export default function PenjualanPage() {
             <textarea className="input" rows={2} value={catatan} onChange={(e) => setCatatan(e.target.value)} />
           </div>
 
-          <div className="flex items-center justify-between rounded-lg bg-slate-50 px-4 py-3">
-            <span className="text-sm font-medium text-slate-600">Total Penjualan</span>
-            <span className="text-lg font-semibold text-slate-800">{rupiah(total)}</span>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <label className="label">Diskon (%)</label>
+              <input
+                type="number"
+                inputMode="decimal"
+                min={0}
+                max={100}
+                className="input"
+                value={diskonPersen}
+                onChange={(e) => setDiskonPersen(e.target.value)}
+              />
+            </div>
+            <div className="flex items-end pb-2.5">
+              <label className="flex items-center gap-2 text-sm text-slate-600">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                  checked={pakaiPpn}
+                  onChange={(e) => setPakaiPpn(e.target.checked)}
+                />
+                Kenakan PPN 11%
+              </label>
+            </div>
+          </div>
+
+          <div className="space-y-1.5 rounded-lg bg-slate-50 px-4 py-3">
+            <div className="flex items-center justify-between text-sm text-slate-500">
+              <span>Subtotal</span>
+              <span>{rupiah(ringkasan.subtotal)}</span>
+            </div>
+            {ringkasan.diskonNominal > 0 && (
+              <div className="flex items-center justify-between text-sm text-slate-500">
+                <span>Diskon ({diskonPersen || 0}%)</span>
+                <span>- {rupiah(ringkasan.diskonNominal)}</span>
+              </div>
+            )}
+            {pakaiPpn && (
+              <div className="flex items-center justify-between text-sm text-slate-500">
+                <span>PPN 11%</span>
+                <span>+ {rupiah(ringkasan.ppn)}</span>
+              </div>
+            )}
+            <div className="flex items-center justify-between border-t border-slate-200 pt-1.5 text-sm font-semibold text-slate-800">
+              <span>Total Penjualan</span>
+              <span>{rupiah(ringkasan.total)}</span>
+            </div>
           </div>
 
           {error && <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</div>}
@@ -389,6 +499,58 @@ export default function PenjualanPage() {
             <button type="submit" disabled={saving} className="btn-primary">
               {saving && <Loader2 className="h-4 w-4 animate-spin" />}
               {editingId ? "Simpan Perubahan" : "Simpan Transaksi"}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Quick-add Pelanggan */}
+      <Modal open={pelangganModalOpen} onClose={() => setPelangganModalOpen(false)} title="Tambah Pelanggan Baru">
+        <form onSubmit={handlePelangganSubmit} className="space-y-4">
+          <div>
+            <label className="label">Nama Pelanggan</label>
+            <input
+              required
+              autoFocus
+              className="input"
+              value={pelangganForm.nama}
+              onChange={(e) => setPelangganForm({ ...pelangganForm, nama: e.target.value })}
+              placeholder="Contoh: Toko Berkah Jaya"
+            />
+          </div>
+          <div>
+            <label className="label">Alamat (opsional)</label>
+            <textarea
+              className="input"
+              rows={2}
+              value={pelangganForm.alamat}
+              onChange={(e) => setPelangganForm({ ...pelangganForm, alamat: e.target.value })}
+            />
+          </div>
+          <div>
+            <label className="label">Telepon (opsional)</label>
+            <input
+              className="input"
+              inputMode="tel"
+              value={pelangganForm.telepon}
+              onChange={(e) => setPelangganForm({ ...pelangganForm, telepon: e.target.value })}
+            />
+          </div>
+
+          {pelangganError && (
+            <div className="flex items-center gap-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">
+              <UserPlus className="h-4 w-4 shrink-0" />
+              {pelangganError}
+            </div>
+          )}
+
+          <div className="flex justify-end gap-2 pt-2">
+            <button type="button" onClick={() => setPelangganModalOpen(false)} className="btn-secondary">
+              Batal
+            </button>
+            <button type="submit" disabled={savingPelanggan} className="btn-primary">
+              {savingPelanggan && <Loader2 className="h-4 w-4 animate-spin" />}
+              Simpan Pelanggan
             </button>
           </div>
         </form>
@@ -426,9 +588,27 @@ export default function PenjualanPage() {
                 </div>
               ))}
             </div>
-            <div className="flex items-center justify-between px-1">
-              <span className="text-sm font-medium text-slate-600">Total</span>
-              <span className="text-base font-semibold text-slate-800">{rupiah(Number(detailOpen.total))}</span>
+            <div className="space-y-1.5 rounded-lg bg-slate-50 px-4 py-3">
+              <div className="flex items-center justify-between text-sm text-slate-500">
+                <span>Subtotal</span>
+                <span>{rupiah(Number(detailOpen.subtotal))}</span>
+              </div>
+              {Number(detailOpen.diskonNominal) > 0 && (
+                <div className="flex items-center justify-between text-sm text-slate-500">
+                  <span>Diskon ({Number(detailOpen.diskonPersen)}%)</span>
+                  <span>- {rupiah(Number(detailOpen.diskonNominal))}</span>
+                </div>
+              )}
+              {Number(detailOpen.ppn) > 0 && (
+                <div className="flex items-center justify-between text-sm text-slate-500">
+                  <span>PPN 11%</span>
+                  <span>+ {rupiah(Number(detailOpen.ppn))}</span>
+                </div>
+              )}
+              <div className="flex items-center justify-between border-t border-slate-200 pt-1.5 text-sm font-semibold text-slate-800">
+                <span>Total</span>
+                <span>{rupiah(Number(detailOpen.total))}</span>
+              </div>
             </div>
             {detailOpen.catatan && (
               <div className="rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600">{detailOpen.catatan}</div>
