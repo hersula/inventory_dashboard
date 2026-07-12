@@ -103,6 +103,13 @@ export default function LoginPage() {
           <p>manager@toko.com — Manajer</p>
           <p>staff@toko.com — Staff (password: password123)</p>
         </div>
+
+        <p className="mt-6 text-center text-sm text-slate-500">
+          Perusahaan Anda belum terdaftar?{" "}
+          <a href="/register" className="font-medium text-brand-600 hover:underline">
+            Daftarkan perusahaan
+          </a>
+        </p>
       </div>
     </div>
   );

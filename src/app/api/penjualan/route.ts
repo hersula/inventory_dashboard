@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requirePermission } from "@/lib/apiAuth";
+import { requirePermission, getCompanyId } from "@/lib/apiAuth";
+import { jurnalPenjualan } from "@/lib/akuntansi";
 import { z } from "zod";
 
 const itemSchema = z.object({
@@ -16,23 +17,24 @@ const penjualanSchema = z.object({
   items: z.array(itemSchema).min(1, "Minimal 1 item barang"),
 });
 
-async function generateNomor() {
+async function generateNomor(companyId: number) {
   const now = new Date();
   const prefix = `PJ-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}`;
   const count = await prisma.penjualan.count({
-    where: { nomor: { startsWith: prefix } },
+    where: { companyId, nomor: { startsWith: prefix } },
   });
   return `${prefix}-${String(count + 1).padStart(3, "0")}`;
 }
 
 export async function GET(req: NextRequest) {
-  const { error } = await requirePermission("penjualan.view");
+  const { error, session } = await requirePermission("penjualan.view");
   if (error) return error;
+  const companyId = getCompanyId(session!);
 
   const q = req.nextUrl.searchParams.get("q") || "";
 
   const data = await prisma.penjualan.findMany({
-    where: q ? { nomor: { contains: q } } : undefined,
+    where: { companyId, ...(q ? { nomor: { contains: q } } : {}) },
     include: {
       pelanggan: true,
       user: { select: { name: true } },
@@ -47,6 +49,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const { error, session } = await requirePermission("penjualan.manage");
   if (error) return error;
+  const companyId = getCompanyId(session!);
 
   const body = await req.json();
   const parsed = penjualanSchema.safeParse(body);
@@ -57,7 +60,8 @@ export async function POST(req: NextRequest) {
   const { items, pelangganId, catatan, tanggal } = parsed.data;
 
   const barangIds = items.map((i) => i.barangId);
-  const barangList = await prisma.barang.findMany({ where: { id: { in: barangIds } } });
+  // companyId di sini penting: mencegah user menjual barangId milik perusahaan lain.
+  const barangList = await prisma.barang.findMany({ where: { id: { in: barangIds }, companyId } });
 
   for (const item of items) {
     const barang = barangList.find((b) => b.id === item.barangId);
@@ -73,11 +77,18 @@ export async function POST(req: NextRequest) {
   }
 
   const total = items.reduce((sum, item) => sum + item.qty * item.hargaSatuan, 0);
-  const nomor = await generateNomor();
+  // HPP (harga pokok penjualan) dihitung dari harga BELI barang saat ini,
+  // bukan harga jual — dipakai untuk jurnal otomatis & laporan laba rugi.
+  const hpp = items.reduce((sum, item) => {
+    const barang = barangList.find((b) => b.id === item.barangId);
+    return sum + item.qty * Number(barang?.hargaBeli ?? 0);
+  }, 0);
+  const nomor = await generateNomor(companyId);
 
   const result = await prisma.$transaction(async (tx) => {
     const penjualan = await tx.penjualan.create({
       data: {
+        companyId,
         nomor,
         tanggal: tanggal ? new Date(tanggal) : new Date(),
         pelangganId: pelangganId ?? null,
@@ -101,6 +112,22 @@ export async function POST(req: NextRequest) {
         where: { id: item.barangId },
         data: { stok: { decrement: item.qty } },
       });
+    }
+
+    // Fail-safe: jangan sampai penjualan gagal hanya karena Chart of Akun
+    // belum disiapkan. Jurnal bisa diposting manual belakangan jika perlu.
+    try {
+      await jurnalPenjualan(tx, {
+        companyId,
+        penjualanId: penjualan.id,
+        nomor: penjualan.nomor,
+        tanggal: penjualan.tanggal,
+        total,
+        hpp,
+        userId: Number(session!.user.id),
+      });
+    } catch (err) {
+      console.error("Gagal posting jurnal otomatis untuk penjualan", penjualan.nomor, err);
     }
 
     return penjualan;

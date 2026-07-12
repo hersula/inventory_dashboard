@@ -18,8 +18,13 @@ export const authOptions: NextAuthOptions = {
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) return null;
 
-        const user = await prisma.user.findUnique({ where: { email: credentials.email } });
+        const user = await prisma.user.findUnique({
+          where: { email: credentials.email },
+          include: { company: true },
+        });
         if (!user || !user.active) return null;
+        // Perusahaan dinonaktifkan (mis. langganan berhenti) -> tolak login.
+        if (!user.company || !user.company.isActive) return null;
 
         const valid = await bcrypt.compare(credentials.password, user.password);
         if (!valid) return null;
@@ -29,6 +34,8 @@ export const authOptions: NextAuthOptions = {
           name: user.name,
           email: user.email,
           role: user.role,
+          companyId: String(user.companyId),
+          companyName: user.company.nama,
         };
       },
     }),
@@ -38,6 +45,8 @@ export const authOptions: NextAuthOptions = {
       if (user) {
         token.id = (user as any).id;
         token.role = (user as any).role;
+        token.companyId = (user as any).companyId;
+        token.companyName = (user as any).companyName;
       }
       return token;
     },
@@ -45,6 +54,8 @@ export const authOptions: NextAuthOptions = {
       if (session.user) {
         (session.user as any).id = token.id;
         (session.user as any).role = token.role;
+        (session.user as any).companyId = token.companyId;
+        (session.user as any).companyName = token.companyName;
       }
       return session;
     },

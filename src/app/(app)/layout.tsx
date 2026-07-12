@@ -11,7 +11,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   }
 
   return (
-    <Shell name={session.user.name} role={session.user.role}>
+    <Shell name={session.user.name} role={session.user.role} companyName={session.user.companyName}>
       {children}
     </Shell>
   );

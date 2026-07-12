@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requirePermission } from "@/lib/apiAuth";
+import { requirePermission, getCompanyId } from "@/lib/apiAuth";
 import { z } from "zod";
 
 const barangSchema = z.object({
@@ -16,11 +16,12 @@ const barangSchema = z.object({
 });
 
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
-  const { error } = await requirePermission("barang.view");
+  const { error, session } = await requirePermission("barang.view");
   if (error) return error;
+  const companyId = getCompanyId(session!);
 
-  const barang = await prisma.barang.findUnique({
-    where: { id: Number(params.id) },
+  const barang = await prisma.barang.findFirst({
+    where: { id: Number(params.id), companyId },
     include: { kategori: true },
   });
   if (!barang) return NextResponse.json({ message: "Barang tidak ditemukan" }, { status: 404 });
@@ -28,8 +29,14 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
 }
 
 export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
-  const { error } = await requirePermission("barang.manage");
+  const { error, session } = await requirePermission("barang.manage");
   if (error) return error;
+  const companyId = getCompanyId(session!);
+  const id = Number(params.id);
+
+  // Pastikan barang ini milik perusahaan yang sedang login sebelum diubah.
+  const owned = await prisma.barang.findFirst({ where: { id, companyId } });
+  if (!owned) return NextResponse.json({ message: "Barang tidak ditemukan" }, { status: 404 });
 
   const body = await req.json();
   const parsed = barangSchema.safeParse(body);
@@ -38,23 +45,28 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
   }
 
   const dup = await prisma.barang.findFirst({
-    where: { kode: parsed.data.kode, NOT: { id: Number(params.id) } },
+    where: { kode: parsed.data.kode, companyId, NOT: { id } },
   });
   if (dup) return NextResponse.json({ message: "Kode barang sudah digunakan" }, { status: 409 });
 
   const barang = await prisma.barang.update({
-    where: { id: Number(params.id) },
+    where: { id },
     data: parsed.data,
   });
   return NextResponse.json(barang);
 }
 
 export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
-  const { error } = await requirePermission("barang.manage");
+  const { error, session } = await requirePermission("barang.manage");
   if (error) return error;
+  const companyId = getCompanyId(session!);
+  const id = Number(params.id);
+
+  const owned = await prisma.barang.findFirst({ where: { id, companyId } });
+  if (!owned) return NextResponse.json({ message: "Barang tidak ditemukan" }, { status: 404 });
 
   try {
-    await prisma.barang.delete({ where: { id: Number(params.id) } });
+    await prisma.barang.delete({ where: { id } });
     return NextResponse.json({ message: "Barang dihapus" });
   } catch {
     return NextResponse.json(

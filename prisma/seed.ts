@@ -1,36 +1,62 @@
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import { jurnalPengadaan, jurnalPenjualan } from "../src/lib/akuntansi";
+import { DEFAULT_AKUN } from "../src/lib/defaultAkun";
 
 const prisma = new PrismaClient();
 
 async function main() {
   const password = await bcrypt.hash("password123", 10);
 
+  // MULTI-TENANT: seed ini membuat SATU perusahaan contoh ("Toko Demo").
+  // Semua data di bawah (user, barang, transaksi, akun) terikat ke company ini.
+  const company = await prisma.company.upsert({
+    where: { slug: "toko-demo" },
+    update: {},
+    create: { nama: "Toko Demo", slug: "toko-demo", email: "admin@toko.com" },
+  });
+
   await prisma.user.createMany({
     data: [
-      { name: "Administrator", email: "admin@toko.com", password, role: "ADMIN" },
-      { name: "Manajer Gudang", email: "manager@toko.com", password, role: "MANAGER" },
-      { name: "Staff Gudang", email: "staff@toko.com", password, role: "STAFF" },
+      { companyId: company.id, name: "Administrator", email: "admin@toko.com", password, role: "ADMIN" },
+      { companyId: company.id, name: "Manajer Gudang", email: "manager@toko.com", password, role: "MANAGER" },
+      { companyId: company.id, name: "Staff Gudang", email: "staff@toko.com", password, role: "STAFF" },
     ],
     skipDuplicates: true,
   });
 
+  // Chart of Akun (COA) default — kode-kode ini dipakai src/lib/akuntansi.ts
+  // untuk posting jurnal OTOMATIS dari transaksi Pengadaan & Penjualan.
+  for (const a of DEFAULT_AKUN) {
+    await prisma.akun.upsert({
+      where: { companyId_kode: { companyId: company.id, kode: a.kode } },
+      update: {},
+      create: { ...a, companyId: company.id },
+    });
+  }
+
   const kategoriData = ["Elektronik", "Alat Tulis Kantor", "Bahan Baku", "Aksesoris"];
   for (const nama of kategoriData) {
     await prisma.kategori.upsert({
-      where: { nama },
+      where: { companyId_nama: { companyId: company.id, nama } },
       update: {},
-      create: { nama },
+      create: { nama, companyId: company.id },
     });
   }
-  const kategoris = await prisma.kategori.findMany();
+  const kategoris = await prisma.kategori.findMany({ where: { companyId: company.id } });
 
   const supplier = await prisma.supplier.create({
-    data: { nama: "PT Sumber Makmur", alamat: "Jl. Industri No. 10, Jakarta", telepon: "021-5551234", email: "sales@sumbermakmur.co.id" },
+    data: {
+      companyId: company.id,
+      nama: "PT Sumber Makmur",
+      alamat: "Jl. Industri No. 10, Jakarta",
+      telepon: "021-5551234",
+      email: "sales@sumbermakmur.co.id",
+    },
   });
 
   const pelanggan = await prisma.pelanggan.create({
-    data: { nama: "Toko Berkah Jaya", alamat: "Jl. Merdeka No. 5, Bogor", telepon: "0251-4441234" },
+    data: { companyId: company.id, nama: "Toko Berkah Jaya", alamat: "Jl. Merdeka No. 5, Bogor", telepon: "0251-4441234" },
   });
 
   const barangData = [
@@ -47,9 +73,10 @@ async function main() {
   for (const b of barangData) {
     const kat = kategoris.find((k) => k.nama === b.kategori);
     await prisma.barang.upsert({
-      where: { kode: b.kode },
+      where: { companyId_kode: { companyId: company.id, kode: b.kode } },
       update: {},
       create: {
+        companyId: company.id,
         kode: b.kode,
         nama: b.nama,
         kategoriId: kat?.id,
@@ -63,7 +90,7 @@ async function main() {
   }
 
   const admin = await prisma.user.findUnique({ where: { email: "admin@toko.com" } });
-  const allBarang = await prisma.barang.findMany();
+  const allBarang = await prisma.barang.findMany({ where: { companyId: company.id } });
 
   if (admin && allBarang.length > 0) {
     const now = new Date();
@@ -72,10 +99,13 @@ async function main() {
       const b1 = allBarang[i % allBarang.length];
       const qty1 = 5 + i;
       const total1 = Number(b1.hargaJual) * qty1;
+      const hpp1 = Number(b1.hargaBeli) * qty1;
 
-      await prisma.penjualan.create({
+      const nomorPj = `PJ-${tanggal.getFullYear()}${String(tanggal.getMonth() + 1).padStart(2, "0")}-${String(i + 1).padStart(3, "0")}`;
+      const penjualan = await prisma.penjualan.create({
         data: {
-          nomor: `PJ-${tanggal.getFullYear()}${String(tanggal.getMonth() + 1).padStart(2, "0")}-${String(i + 1).padStart(3, "0")}`,
+          companyId: company.id,
+          nomor: nomorPj,
           tanggal,
           pelangganId: pelanggan.id,
           userId: admin.id,
@@ -92,13 +122,28 @@ async function main() {
           },
         },
       });
+      try {
+        await jurnalPenjualan(prisma, {
+          companyId: company.id,
+          penjualanId: penjualan.id,
+          nomor: penjualan.nomor,
+          tanggal: penjualan.tanggal,
+          total: total1,
+          hpp: hpp1,
+          userId: admin.id,
+        });
+      } catch (e) {
+        console.warn("Lewati jurnal seed penjualan:", (e as Error).message);
+      }
 
       const b2 = allBarang[(i + 2) % allBarang.length];
       const qty2 = 10 + i * 2;
       const total2 = Number(b2.hargaBeli) * qty2;
-      await prisma.pengadaan.create({
+      const nomorPo = `PO-${tanggal.getFullYear()}${String(tanggal.getMonth() + 1).padStart(2, "0")}-${String(i + 1).padStart(3, "0")}`;
+      const pengadaan = await prisma.pengadaan.create({
         data: {
-          nomor: `PO-${tanggal.getFullYear()}${String(tanggal.getMonth() + 1).padStart(2, "0")}-${String(i + 1).padStart(3, "0")}`,
+          companyId: company.id,
+          nomor: nomorPo,
           tanggal,
           supplierId: supplier.id,
           userId: admin.id,
@@ -115,10 +160,23 @@ async function main() {
           },
         },
       });
+      try {
+        await jurnalPengadaan(prisma, {
+          companyId: company.id,
+          pengadaanId: pengadaan.id,
+          nomor: pengadaan.nomor,
+          tanggal: pengadaan.tanggal,
+          total: total2,
+          userId: admin.id,
+        });
+      } catch (e) {
+        console.warn("Lewati jurnal seed pengadaan:", (e as Error).message);
+      }
     }
   }
 
   console.log("Seed selesai.");
+  console.log(`Perusahaan demo: ${company.nama} (slug: ${company.slug})`);
   console.log("Login demo:");
   console.log("  admin@toko.com   / password123 (ADMIN)");
   console.log("  manager@toko.com / password123 (MANAGER)");

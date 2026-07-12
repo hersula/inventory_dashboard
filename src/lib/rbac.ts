@@ -14,6 +14,8 @@ export type Permission =
   | "pengadaan.manage"
   | "penjualan.view"
   | "penjualan.manage"
+  | "akuntansi.view"
+  | "akuntansi.manage"
   | "users.manage";
 
 const rolePermissions: Record<Role, Permission[]> = {
@@ -25,6 +27,8 @@ const rolePermissions: Record<Role, Permission[]> = {
     "pengadaan.manage",
     "penjualan.view",
     "penjualan.manage",
+    "akuntansi.view",
+    "akuntansi.manage",
     "users.manage",
   ],
   MANAGER: [
@@ -35,6 +39,8 @@ const rolePermissions: Record<Role, Permission[]> = {
     "pengadaan.manage",
     "penjualan.view",
     "penjualan.manage",
+    "akuntansi.view",
+    "akuntansi.manage",
   ],
   STAFF: ["dashboard.view", "barang.view", "pengadaan.view", "pengadaan.manage", "penjualan.view", "penjualan.manage"],
 };

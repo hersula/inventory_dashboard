@@ -13,44 +13,91 @@ enum Role {
   STAFF
 }
 
+// ---------------------------------------------------------------
+// MULTI-TENANT: setiap Company (perusahaan) adalah satu "tenant".
+// Semua data operasional (barang, transaksi, akuntansi, user) selalu
+// terikat ke satu companyId, dan setiap query di API WAJIB difilter
+// dengan companyId milik user yang sedang login (lihat src/lib/apiAuth.ts).
+// Pendaftaran perusahaan baru: lihat src/app/api/register/route.ts.
+// ---------------------------------------------------------------
+model Company {
+  id        Int      @id @default(autoincrement())
+  nama      String
+  slug      String   @unique
+  email     String?
+  telepon   String?
+  alamat    String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  users         User[]
+  kategori      Kategori[]
+  supplier      Supplier[]
+  pelanggan     Pelanggan[]
+  barang        Barang[]
+  pengadaan     Pengadaan[]
+  penjualan     Penjualan[]
+  akun          Akun[]
+  jurnalEntries JurnalEntry[]
+}
+
 model User {
-  id        Int         @id @default(autoincrement())
-  name      String
-  email     String      @unique
-  password  String
-  role      Role        @default(STAFF)
-  active    Boolean     @default(true)
-  createdAt DateTime    @default(now())
-  pengadaan Pengadaan[]
-  penjualan Penjualan[]
+  id            Int           @id @default(autoincrement())
+  companyId     Int
+  company       Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  name          String
+  email         String        @unique
+  password      String
+  role          Role          @default(STAFF)
+  active        Boolean       @default(true)
+  createdAt     DateTime      @default(now())
+  pengadaan     Pengadaan[]
+  penjualan     Penjualan[]
+  jurnalEntries JurnalEntry[]
+
+  @@index([companyId])
 }
 
 model Kategori {
-  id     Int      @id @default(autoincrement())
-  nama   String   @unique
-  barang Barang[]
+  id        Int      @id @default(autoincrement())
+  companyId Int
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  nama      String
+  barang    Barang[]
+
+  @@unique([companyId, nama])
 }
 
 model Supplier {
   id        Int         @id @default(autoincrement())
+  companyId Int
+  company   Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
   nama      String
   alamat    String?
   telepon   String?
   email     String?
   pengadaan Pengadaan[]
+
+  @@index([companyId])
 }
 
 model Pelanggan {
   id        Int         @id @default(autoincrement())
+  companyId Int
+  company   Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
   nama      String
   alamat    String?
   telepon   String?
   penjualan Penjualan[]
+
+  @@index([companyId])
 }
 
 model Barang {
   id              Int               @id @default(autoincrement())
-  kode            String            @unique
+  companyId       Int
+  company         Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  kode            String
   nama            String
   kategoriId      Int?
   kategori        Kategori?         @relation(fields: [kategoriId], references: [id])
@@ -65,12 +112,15 @@ model Barang {
   pengadaanDetail PengadaanDetail[]
   penjualanDetail PenjualanDetail[]
 
+  @@unique([companyId, kode])
   @@index([kategoriId])
 }
 
 model Pengadaan {
   id         Int               @id @default(autoincrement())
-  nomor      String            @unique
+  companyId  Int
+  company    Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  nomor      String
   tanggal    DateTime          @default(now())
   supplierId Int?
   supplier   Supplier?         @relation(fields: [supplierId], references: [id])
@@ -82,6 +132,7 @@ model Pengadaan {
   createdAt  DateTime          @default(now())
   detail     PengadaanDetail[]
 
+  @@unique([companyId, nomor])
   @@index([supplierId])
   @@index([userId])
 }
@@ -102,7 +153,9 @@ model PengadaanDetail {
 
 model Penjualan {
   id          Int               @id @default(autoincrement())
-  nomor       String            @unique
+  companyId   Int
+  company     Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  nomor       String
   tanggal     DateTime          @default(now())
   pelangganId Int?
   pelanggan   Pelanggan?        @relation(fields: [pelangganId], references: [id])
@@ -114,6 +167,7 @@ model Penjualan {
   createdAt   DateTime          @default(now())
   detail      PenjualanDetail[]
 
+  @@unique([companyId, nomor])
   @@index([pelangganId])
   @@index([userId])
 }
@@ -130,4 +184,78 @@ model PenjualanDetail {
 
   @@index([penjualanId])
   @@index([barangId])
+}
+
+// ---------------------------------------------------------------
+// MODUL AKUNTANSI
+// Chart of Account (Akun) + Jurnal Umum (double-entry bookkeeping).
+// Setiap transaksi Pengadaan & Penjualan otomatis membuat 1 JurnalEntry
+// (lihat src/lib/akuntansi.ts) sehingga posisi keuangan selalu sinkron
+// dengan transaksi operasional, tanpa input manual berulang.
+// Semua data akuntansi juga terikat companyId (lihat catatan multi-tenant
+// di atas model Company).
+// ---------------------------------------------------------------
+
+enum TipeAkun {
+  ASET
+  KEWAJIBAN
+  MODAL
+  PENDAPATAN
+  BEBAN
+}
+
+enum SaldoNormal {
+  DEBIT
+  KREDIT
+}
+
+model Akun {
+  id           Int            @id @default(autoincrement())
+  companyId    Int
+  company      Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  kode         String
+  nama         String
+  tipe         TipeAkun
+  saldoNormal  SaldoNormal
+  isActive     Boolean        @default(true)
+  createdAt    DateTime       @default(now())
+  jurnalDetail JurnalDetail[]
+
+  @@unique([companyId, kode])
+  @@index([tipe])
+}
+
+model JurnalEntry {
+  id            Int            @id @default(autoincrement())
+  companyId     Int
+  company       Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  nomor         String
+  tanggal       DateTime       @default(now())
+  keterangan    String?
+  // referensiTipe: "pengadaan" | "penjualan" | "manual" — dipakai untuk
+  // melacak & membalik jurnal otomatis saat transaksi sumbernya diedit/dibatalkan.
+  referensiTipe String         @default("manual")
+  referensiId   Int?
+  userId        Int
+  user          User           @relation(fields: [userId], references: [id])
+  detail        JurnalDetail[]
+  createdAt     DateTime       @default(now())
+
+  @@unique([companyId, nomor])
+  @@index([tanggal])
+  @@index([referensiTipe, referensiId])
+}
+
+model JurnalDetail {
+  id            Int         @id @default(autoincrement())
+  jurnalEntryId Int
+  jurnalEntry   JurnalEntry @relation(fields: [jurnalEntryId], references: [id], onDelete: Cascade)
+  akunId        Int
+  akun          Akun        @relation(fields: [akunId], references: [id])
+  debit         Decimal     @default(0) @db.Decimal(15, 2)
+  kredit        Decimal     @default(0) @db.Decimal(15, 2)
+  keterangan    String?
+
+  @@index([jurnalEntryId])
+  @@index([akunId])
 }

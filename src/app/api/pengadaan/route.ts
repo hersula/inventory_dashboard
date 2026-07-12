@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requirePermission } from "@/lib/apiAuth";
+import { requirePermission, getCompanyId } from "@/lib/apiAuth";
+import { jurnalPengadaan } from "@/lib/akuntansi";
 import { z } from "zod";
 
 const itemSchema = z.object({
@@ -16,23 +17,24 @@ const pengadaanSchema = z.object({
   items: z.array(itemSchema).min(1, "Minimal 1 item barang"),
 });
 
-async function generateNomor() {
+async function generateNomor(companyId: number) {
   const now = new Date();
   const prefix = `PO-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}`;
   const count = await prisma.pengadaan.count({
-    where: { nomor: { startsWith: prefix } },
+    where: { companyId, nomor: { startsWith: prefix } },
   });
   return `${prefix}-${String(count + 1).padStart(3, "0")}`;
 }
 
 export async function GET(req: NextRequest) {
-  const { error } = await requirePermission("pengadaan.view");
+  const { error, session } = await requirePermission("pengadaan.view");
   if (error) return error;
+  const companyId = getCompanyId(session!);
 
   const q = req.nextUrl.searchParams.get("q") || "";
 
   const data = await prisma.pengadaan.findMany({
-    where: q ? { nomor: { contains: q } } : undefined,
+    where: { companyId, ...(q ? { nomor: { contains: q } } : {}) },
     include: {
       supplier: true,
       user: { select: { name: true } },
@@ -47,6 +49,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const { error, session } = await requirePermission("pengadaan.manage");
   if (error) return error;
+  const companyId = getCompanyId(session!);
 
   const body = await req.json();
   const parsed = pengadaanSchema.safeParse(body);
@@ -55,12 +58,22 @@ export async function POST(req: NextRequest) {
   }
 
   const { items, supplierId, catatan, tanggal } = parsed.data;
+
+  // Pastikan semua barang yang dipilih benar-benar milik perusahaan ini
+  // (mencegah user mereferensikan barangId milik perusahaan lain).
+  const barangIds = items.map((i) => i.barangId);
+  const ownedCount = await prisma.barang.count({ where: { id: { in: barangIds }, companyId } });
+  if (ownedCount !== new Set(barangIds).size) {
+    return NextResponse.json({ message: "Salah satu barang tidak ditemukan" }, { status: 400 });
+  }
+
   const total = items.reduce((sum, item) => sum + item.qty * item.hargaSatuan, 0);
-  const nomor = await generateNomor();
+  const nomor = await generateNomor(companyId);
 
   const result = await prisma.$transaction(async (tx) => {
     const pengadaan = await tx.pengadaan.create({
       data: {
+        companyId,
         nomor,
         tanggal: tanggal ? new Date(tanggal) : new Date(),
         supplierId: supplierId ?? null,
@@ -84,6 +97,22 @@ export async function POST(req: NextRequest) {
         where: { id: item.barangId },
         data: { stok: { increment: item.qty } },
       });
+    }
+
+    // Posting jurnal bersifat fail-safe: jika Chart of Akun belum disiapkan
+    // (mis. instalasi baru yang belum menjalankan seed), transaksi pengadaan
+    // tetap berhasil — jurnal cukup diposting manual belakangan lewat modul Akuntansi.
+    try {
+      await jurnalPengadaan(tx, {
+        companyId,
+        pengadaanId: pengadaan.id,
+        nomor: pengadaan.nomor,
+        tanggal: pengadaan.tanggal,
+        total,
+        userId: Number(session!.user.id),
+      });
+    } catch (err) {
+      console.error("Gagal posting jurnal otomatis untuk pengadaan", pengadaan.nomor, err);
     }
 
     return pengadaan;

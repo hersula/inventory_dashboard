@@ -11,21 +11,30 @@ const titleMap: Record<string, string> = {
   "/master-barang": "Master Barang",
   "/pengadaan": "Pengadaan Barang",
   "/penjualan": "Penjualan Barang",
+  "/akuntansi/jurnal": "Jurnal Umum",
+  "/akuntansi/laporan": "Laporan Keuangan",
+  "/akuntansi": "Chart of Akun",
   "/users": "Manajemen User",
 };
 
 function resolveTitle(pathname: string) {
-  const match = Object.keys(titleMap).find((key) => pathname === key || pathname.startsWith(key + "/"));
+  // Urutkan dari path paling spesifik (terpanjang) supaya "/akuntansi/jurnal"
+  // dicek lebih dulu daripada "/akuntansi" yang merupakan prefix-nya.
+  const match = Object.keys(titleMap)
+    .sort((a, b) => b.length - a.length)
+    .find((key) => pathname === key || pathname.startsWith(key + "/"));
   return match ? titleMap[match] : "Inventory Dashboard";
 }
 
 export default function Shell({
   name,
   role,
+  companyName,
   children,
 }: {
   name: string;
   role: Role;
+  companyName: string;
   children: React.ReactNode;
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -33,7 +42,7 @@ export default function Shell({
 
   return (
     <div className="flex min-h-screen bg-slate-50">
-      <Sidebar role={role} open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+      <Sidebar role={role} companyName={companyName} open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
       <div className="flex min-h-screen flex-1 flex-col lg:pl-0">
         <Header
           name={name}

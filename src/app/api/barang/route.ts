@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requirePermission } from "@/lib/apiAuth";
+import { requirePermission, getCompanyId } from "@/lib/apiAuth";
 import { z } from "zod";
 
 const barangSchema = z.object({
@@ -16,20 +16,21 @@ const barangSchema = z.object({
 });
 
 export async function GET(req: NextRequest) {
-  const { error } = await requirePermission("barang.view");
+  const { error, session } = await requirePermission("barang.view");
   if (error) return error;
+  const companyId = getCompanyId(session!);
 
   const q = req.nextUrl.searchParams.get("q") || "";
 
   const data = await prisma.barang.findMany({
-    where: q
-      ? {
-          OR: [
-            { nama: { contains: q } },
-            { kode: { contains: q } },
-          ],
-        }
-      : undefined,
+    where: {
+      companyId,
+      ...(q
+        ? {
+            OR: [{ nama: { contains: q } }, { kode: { contains: q } }],
+          }
+        : {}),
+    },
     include: { kategori: true },
     orderBy: { createdAt: "desc" },
   });
@@ -38,8 +39,9 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const { error } = await requirePermission("barang.manage");
+  const { error, session } = await requirePermission("barang.manage");
   if (error) return error;
+  const companyId = getCompanyId(session!);
 
   const body = await req.json();
   const parsed = barangSchema.safeParse(body);
@@ -47,11 +49,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ message: "Data tidak valid", issues: parsed.error.issues }, { status: 400 });
   }
 
-  const existing = await prisma.barang.findUnique({ where: { kode: parsed.data.kode } });
+  const existing = await prisma.barang.findFirst({ where: { kode: parsed.data.kode, companyId } });
   if (existing) {
     return NextResponse.json({ message: "Kode barang sudah digunakan" }, { status: 409 });
   }
 
-  const barang = await prisma.barang.create({ data: parsed.data });
+  const barang = await prisma.barang.create({ data: { ...parsed.data, companyId } });
   return NextResponse.json(barang, { status: 201 });
 }

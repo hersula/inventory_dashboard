@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requirePermission } from "@/lib/apiAuth";
+import { requirePermission, getCompanyId } from "@/lib/apiAuth";
+import { jurnalPenjualan, hapusJurnalReferensi } from "@/lib/akuntansi";
 import { z } from "zod";
 
 const itemSchema = z.object({
@@ -17,11 +18,12 @@ const updateSchema = z.object({
 });
 
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
-  const { error } = await requirePermission("penjualan.view");
+  const { error, session } = await requirePermission("penjualan.view");
   if (error) return error;
+  const companyId = getCompanyId(session!);
 
-  const data = await prisma.penjualan.findUnique({
-    where: { id: Number(params.id) },
+  const data = await prisma.penjualan.findFirst({
+    where: { id: Number(params.id), companyId },
     include: { pelanggan: true, user: { select: { name: true } }, detail: { include: { barang: true } } },
   });
   if (!data) return NextResponse.json({ message: "Data tidak ditemukan" }, { status: 404 });
@@ -29,11 +31,12 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
 }
 
 export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
-  const { error } = await requirePermission("penjualan.manage");
+  const { error, session } = await requirePermission("penjualan.manage");
   if (error) return error;
+  const companyId = getCompanyId(session!);
 
   const id = Number(params.id);
-  const existing = await prisma.penjualan.findUnique({ where: { id }, include: { detail: true } });
+  const existing = await prisma.penjualan.findFirst({ where: { id, companyId }, include: { detail: true } });
   if (!existing) return NextResponse.json({ message: "Data tidak ditemukan" }, { status: 404 });
 
   const body = await req.json();
@@ -54,7 +57,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
   for (const it of items) newMap.set(it.barangId, (newMap.get(it.barangId) ?? 0) + it.qty);
 
   const affectedIds = Array.from(new Set([...oldMap.keys(), ...newMap.keys()]));
-  const barangList = await prisma.barang.findMany({ where: { id: { in: affectedIds } } });
+  const barangList = await prisma.barang.findMany({ where: { id: { in: affectedIds }, companyId } });
 
   const deltas: { barangId: number; delta: number }[] = [];
   for (const bid of affectedIds) {
@@ -76,6 +79,12 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
   }
 
   const total = items.reduce((sum, item) => sum + item.qty * item.hargaSatuan, 0);
+  // HPP dihitung ulang dari harga beli barang saat ini (barangList sudah
+  // memuat semua barang yang terlibat, termasuk baris baru).
+  const hpp = items.reduce((sum, item) => {
+    const barang = barangList.find((b) => b.id === item.barangId);
+    return sum + item.qty * Number(barang?.hargaBeli ?? 0);
+  }, 0);
 
   const result = await prisma.$transaction(async (tx) => {
     for (const d of deltas) {
@@ -84,7 +93,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
 
     await tx.penjualanDetail.deleteMany({ where: { penjualanId: id } });
 
-    return tx.penjualan.update({
+    const updated = await tx.penjualan.update({
       where: { id },
       data: {
         tanggal: tanggal ? new Date(tanggal) : existing.tanggal,
@@ -102,17 +111,35 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
       },
       include: { pelanggan: true, user: { select: { name: true } }, detail: { include: { barang: true } } },
     });
+
+    try {
+      await hapusJurnalReferensi(tx, "penjualan", id);
+      await jurnalPenjualan(tx, {
+        companyId,
+        penjualanId: id,
+        nomor: updated.nomor,
+        tanggal: updated.tanggal,
+        total,
+        hpp,
+        userId: Number(session!.user.id),
+      });
+    } catch (err) {
+      console.error("Gagal menyesuaikan jurnal otomatis untuk penjualan", updated.nomor, err);
+    }
+
+    return updated;
   });
 
   return NextResponse.json(result);
 }
 
 export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
-  const { error } = await requirePermission("penjualan.manage");
+  const { error, session } = await requirePermission("penjualan.manage");
   if (error) return error;
+  const companyId = getCompanyId(session!);
 
-  const penjualan = await prisma.penjualan.findUnique({
-    where: { id: Number(params.id) },
+  const penjualan = await prisma.penjualan.findFirst({
+    where: { id: Number(params.id), companyId },
     include: { detail: true },
   });
   if (!penjualan) return NextResponse.json({ message: "Data tidak ditemukan" }, { status: 404 });
@@ -124,6 +151,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
         data: { stok: { increment: item.qty } },
       });
     }
+    await hapusJurnalReferensi(tx, "penjualan", penjualan.id);
     await tx.penjualan.delete({ where: { id: penjualan.id } });
   });
 

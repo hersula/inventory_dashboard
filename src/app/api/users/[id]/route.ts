@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requirePermission } from "@/lib/apiAuth";
+import { requirePermission, getCompanyId } from "@/lib/apiAuth";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 
@@ -13,14 +13,23 @@ const updateSchema = z.object({
 });
 
 export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
-  const { error } = await requirePermission("users.manage");
+  const { error, session } = await requirePermission("users.manage");
   if (error) return error;
+  const companyId = getCompanyId(session!);
+  const id = Number(params.id);
+
+  // Pastikan user yang diedit benar-benar bagian dari perusahaan ini.
+  const owned = await prisma.user.findFirst({ where: { id, companyId } });
+  if (!owned) return NextResponse.json({ message: "User tidak ditemukan" }, { status: 404 });
 
   const body = await req.json();
   const parsed = updateSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json({ message: "Data tidak valid", issues: parsed.error.issues }, { status: 400 });
   }
+
+  const dup = await prisma.user.findFirst({ where: { email: parsed.data.email, NOT: { id } } });
+  if (dup) return NextResponse.json({ message: "Email sudah dipakai user lain" }, { status: 409 });
 
   const data: any = {
     name: parsed.data.name,
@@ -33,7 +42,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
   }
 
   const user = await prisma.user.update({
-    where: { id: Number(params.id) },
+    where: { id },
     data,
     select: { id: true, name: true, email: true, role: true, active: true, createdAt: true },
   });
@@ -43,11 +52,16 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
 export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
   const { error, session } = await requirePermission("users.manage");
   if (error) return error;
+  const companyId = getCompanyId(session!);
+  const id = Number(params.id);
 
-  if (Number(params.id) === Number(session!.user.id)) {
+  if (id === Number(session!.user.id)) {
     return NextResponse.json({ message: "Tidak dapat menghapus akun sendiri" }, { status: 400 });
   }
 
-  await prisma.user.delete({ where: { id: Number(params.id) } });
+  const owned = await prisma.user.findFirst({ where: { id, companyId } });
+  if (!owned) return NextResponse.json({ message: "User tidak ditemukan" }, { status: 404 });
+
+  await prisma.user.delete({ where: { id } });
   return NextResponse.json({ message: "User dihapus" });
 }

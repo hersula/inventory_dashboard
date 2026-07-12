@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requirePermission } from "@/lib/apiAuth";
+import { requirePermission, getCompanyId } from "@/lib/apiAuth";
 
 export async function GET() {
-  const { error } = await requirePermission("dashboard.view");
+  const { error, session } = await requirePermission("dashboard.view");
   if (error) return error;
+  const companyId = getCompanyId(session!);
 
   const now = new Date();
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -20,35 +21,35 @@ export async function GET() {
     penjualan6Bulan,
     pengadaan6Bulan,
   ] = await Promise.all([
-    prisma.barang.count(),
-    prisma.barang.aggregate({ _sum: { stok: true } }),
+    prisma.barang.count({ where: { companyId } }),
+    prisma.barang.aggregate({ where: { companyId }, _sum: { stok: true } }),
     prisma.penjualan.aggregate({
-      where: { tanggal: { gte: startOfMonth } },
+      where: { companyId, tanggal: { gte: startOfMonth } },
       _sum: { total: true },
       _count: true,
     }),
     prisma.pengadaan.aggregate({
-      where: { tanggal: { gte: startOfMonth } },
+      where: { companyId, tanggal: { gte: startOfMonth } },
       _sum: { total: true },
       _count: true,
     }),
-    prisma.kategori.findMany({ include: { _count: { select: { barang: true } } } }),
+    prisma.kategori.findMany({ where: { companyId }, include: { _count: { select: { barang: true } } } }),
     prisma.penjualanDetail.findMany({
-      where: { penjualan: { tanggal: { gte: sixMonthsAgo } } },
+      where: { penjualan: { companyId, tanggal: { gte: sixMonthsAgo } } },
       include: { barang: true },
     }),
     prisma.penjualan.findMany({
-      where: { tanggal: { gte: sixMonthsAgo } },
+      where: { companyId, tanggal: { gte: sixMonthsAgo } },
       select: { tanggal: true, total: true },
     }),
     prisma.pengadaan.findMany({
-      where: { tanggal: { gte: sixMonthsAgo } },
+      where: { companyId, tanggal: { gte: sixMonthsAgo } },
       select: { tanggal: true, total: true },
     }),
   ]);
 
   // Fallback for low-stock (Prisma doesn't support comparing two columns directly in all versions)
-  const allBarang = await prisma.barang.findMany();
+  const allBarang = await prisma.barang.findMany({ where: { companyId } });
   const lowStock = allBarang
     .filter((b) => b.stok <= b.stokMinimum)
     .sort((a, b) => a.stok - b.stok)
