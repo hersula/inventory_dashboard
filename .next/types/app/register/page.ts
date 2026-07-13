@@ -1,4 +1,4 @@
-// File: /home/sule/Projects/inventory_dashboard/src/app/register/page.tsx
+// File: C:\laragon\www\inventory_dashboard\src\app\register\page.tsx
 import * as entry from '../../../../src/app/register/page.js'
 import type { ResolvingMetadata, ResolvingViewport } from 'next/dist/lib/metadata/types/metadata-interface.js'
 

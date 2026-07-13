@@ -1,4 +1,4 @@
-// File: /home/sule/Projects/inventory_dashboard/src/app/api/register/route.ts
+// File: C:\laragon\www\inventory_dashboard\src\app\api\register\route.ts
 import * as entry from '../../../../../src/app/api/register/route.js'
 import type { NextRequest } from 'next/server.js'
 

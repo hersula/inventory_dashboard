@@ -50,7 +50,16 @@ export default function Shell({
           title={resolveTitle(pathname || "")}
           onMenuClick={() => setSidebarOpen(true)}
         />
-        <main className="flex-1 p-4 sm:p-6">{children}</main>
+        <main
+          className="flex-1 p-4 sm:p-6"
+          style={{
+            paddingBottom: "max(1rem, env(safe-area-inset-bottom))",
+            paddingLeft: "max(1rem, env(safe-area-inset-left))",
+            paddingRight: "max(1rem, env(safe-area-inset-right))",
+          }}
+        >
+          {children}
+        </main>
       </div>
     </div>
   );

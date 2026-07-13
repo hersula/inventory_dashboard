@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, useCallback, FormEvent } from "react";
 import { useSession } from "next-auth/react";
-import { Plus, Pencil, Trash2, Loader2, PackageSearch } from "lucide-react";
+import { Plus, Pencil, Trash2, Loader2, PackageSearch, FolderPlus } from "lucide-react";
 import DataTable, { Column } from "@/components/DataTable";
 import Modal from "@/components/Modal";
 import Badge from "@/components/Badge";
@@ -39,6 +39,8 @@ const emptyForm = {
 };
 
 const rupiah = (v: number) => `Rp ${Math.round(v).toLocaleString("id-ID")}`;
+const NEW_KATEGORI = "__new__";
+const emptyKategoriForm = { nama: "" };
 
 export default function MasterBarangPage() {
   const { data: session } = useSession();
@@ -56,6 +58,12 @@ export default function MasterBarangPage() {
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+
+  // Quick-add kategori langsung dari form barang.
+  const [kategoriModalOpen, setKategoriModalOpen] = useState(false);
+  const [kategoriForm, setKategoriForm] = useState(emptyKategoriForm);
+  const [savingKategori, setSavingKategori] = useState(false);
+  const [kategoriError, setKategoriError] = useState("");
 
   const loadData = useCallback(async () => {
     setRefreshing(true);
@@ -105,6 +113,40 @@ export default function MasterBarangPage() {
     setEditing(true);
     setError("");
     setModalOpen(true);
+  }
+
+  function handleKategoriSelect(value: string) {
+    if (value === NEW_KATEGORI) {
+      setKategoriForm(emptyKategoriForm);
+      setKategoriError("");
+      setKategoriModalOpen(true);
+      return;
+    }
+    setForm({ ...form, kategoriId: value });
+  }
+
+  async function handleKategoriSubmit(e: FormEvent) {
+    e.preventDefault();
+    setSavingKategori(true);
+    setKategoriError("");
+
+    const res = await fetch("/api/kategori", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(kategoriForm),
+    });
+    const data = await res.json().catch(() => ({}));
+    setSavingKategori(false);
+
+    if (!res.ok) {
+      setKategoriError(data.message || "Gagal menambahkan kategori.");
+      return;
+    }
+
+    // Kategori baru langsung masuk daftar & otomatis terpilih di form barang.
+    setKategoris((prev) => [...prev, data]);
+    setForm((f) => ({ ...f, kategoriId: data.id }));
+    setKategoriModalOpen(false);
   }
 
   async function handleSubmit(e: FormEvent) {
@@ -262,7 +304,7 @@ export default function MasterBarangPage() {
               <select
                 className="input"
                 value={form.kategoriId}
-                onChange={(e) => setForm({ ...form, kategoriId: e.target.value })}
+                onChange={(e) => handleKategoriSelect(e.target.value)}
               >
                 <option value="">Tanpa kategori</option>
                 {kategoris.map((k) => (
@@ -270,6 +312,7 @@ export default function MasterBarangPage() {
                     {k.nama}
                   </option>
                 ))}
+                <option value={NEW_KATEGORI}>+ Tambah Kategori Baru...</option>
               </select>
             </div>
           </div>
@@ -373,6 +416,40 @@ export default function MasterBarangPage() {
             <button type="submit" disabled={saving} className="btn-primary">
               {saving && <Loader2 className="h-4 w-4 animate-spin" />}
               Simpan
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Quick-add Kategori */}
+      <Modal open={kategoriModalOpen} onClose={() => setKategoriModalOpen(false)} title="Tambah Kategori Baru">
+        <form onSubmit={handleKategoriSubmit} className="space-y-4">
+          <div>
+            <label className="label">Nama Kategori</label>
+            <input
+              required
+              autoFocus
+              className="input"
+              value={kategoriForm.nama}
+              onChange={(e) => setKategoriForm({ nama: e.target.value })}
+              placeholder="Contoh: Elektronik"
+            />
+          </div>
+
+          {kategoriError && (
+            <div className="flex items-center gap-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">
+              <FolderPlus className="h-4 w-4 shrink-0" />
+              {kategoriError}
+            </div>
+          )}
+
+          <div className="flex justify-end gap-2 pt-2">
+            <button type="button" onClick={() => setKategoriModalOpen(false)} className="btn-secondary">
+              Batal
+            </button>
+            <button type="submit" disabled={savingKategori} className="btn-primary">
+              {savingKategori && <Loader2 className="h-4 w-4 animate-spin" />}
+              Simpan Kategori
             </button>
           </div>
         </form>

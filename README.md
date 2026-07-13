@@ -26,7 +26,7 @@ Aplikasi ini bersifat **multi-tenant** — satu deployment bisa melayani banyak 
 | **Registrasi Perusahaan** | Pendaftaran mandiri (`/register`) — membuat perusahaan baru + admin pertama + Chart of Akun default |
 | **Login** | Autentikasi email/password (NextAuth, JWT session), menyertakan konteks perusahaan (`companyId`) di setiap sesi |
 | **Dashboard** | Analisa barang **milik perusahaan yang login**: total jenis barang, nilai stok, tren penjualan vs pengadaan 6 bulan, komposisi kategori, barang terlaris, barang stok menipis |
-| **Master Barang** | CRUD data barang: kode, nama, kategori, satuan, harga beli/jual, stok, stok minimum |
+| **Master Barang** | CRUD data barang: kode, nama, kategori (dengan quick-add kategori baru langsung dari form), satuan, harga beli/jual, stok, stok minimum |
 | **Pengadaan Barang** | Transaksi barang masuk (dari supplier), dengan **diskon (%) & PPN 11%**. Menambah stok otomatis, quick-add supplier langsung dari form, riwayat transaksi, **edit transaksi** (stok disesuaikan otomatis berdasarkan selisih qty), batal transaksi (stok dikembalikan) |
 | **Penjualan Barang** | Transaksi barang keluar, dengan **diskon (%) & PPN 11%**. Mengurangi stok otomatis dengan validasi stok tersedia, quick-add pelanggan langsung dari form, riwayat transaksi, **edit transaksi** (stok disesuaikan otomatis, termasuk validasi jika qty baru melebihi stok tersedia), batal transaksi |
 | **Manajemen User** | CRUD user & role — **dibatasi hanya untuk user dalam perusahaan yang sama** (khusus Administrator) |
@@ -211,6 +211,14 @@ Tidak ada langkah lain yang diperlukan — routing, proteksi login, dan tampilan
 - Form transaksi & modal menggunakan lebar penuh di mobile dan menempel di bagian bawah layar (bottom sheet style) agar mudah dijangkau ibu jari.
 - Grid statistik & grafik menyesuaikan jumlah kolom otomatis (1 kolom di mobile, hingga 4 kolom di layar besar).
 
+### Bisa Diinstall sebagai Aplikasi di HP (PWA)
+
+Aplikasi ini punya `public/manifest.json` + ikon (`public/icons/`) sehingga bisa **"Ditambahkan ke Layar Utama"** dari browser HP (Android Chrome: menu ⋮ → "Add to Home screen"; iOS Safari: tombol Share → "Add to Home Screen") dan akan terbuka seperti aplikasi native — tanpa address bar browser, dengan ikon & nama sendiri ("Inventory") di home screen.
+
+- Metadata PWA (nama, ikon, warna tema, mode tampilan `standalone`) diatur di `src/app/layout.tsx` dan `public/manifest.json`.
+- **Penanganan notch/home-indicator (safe-area)** — `viewport-fit: cover` diaktifkan supaya tampilan memenuhi layar penuh di perangkat dengan notch/dynamic island (iPhone). Header, sidebar, modal (khususnya tombol sticky di bagian bawah form), serta halaman login/register semuanya sudah diberi padding `env(safe-area-inset-*)` agar tidak ada konten atau tombol yang tertutup notch di atas atau home-indicator di bawah.
+- Catatan: ini adalah PWA "installable" (manifest + ikon), belum termasuk service worker untuk mode offline. Kalau suatu saat dibutuhkan akses offline, tinggal tambahkan `next-pwa` atau service worker manual di atas fondasi yang sudah ada ini.
+
 ### Input di HP/Mobile
 
 - Semua field angka (qty, harga, stok) memakai `inputMode="numeric"` / `"decimal"` sehingga keyboard HP langsung menampilkan tombol angka, bukan keyboard huruf.
@@ -218,6 +226,7 @@ Tidak ada langkah lain yang diperlukan — routing, proteksi login, dan tampilan
 - Ukuran font input dipaksa minimal 16px khusus di layar kecil (lihat `globals.css`) — ini mencegah Safari iOS otomatis melakukan zoom saat sebuah input disentuh.
 - Tombol aksi (edit/hapus/lihat) memakai kelas `.icon-btn` dengan area sentuh 36x36px agar mudah ditekan jari.
 - Tombol "Simpan"/"Batal" pada form transaksi bersifat *sticky* di bagian bawah modal, sehingga tetap terlihat & bisa ditekan meski form sedang di-scroll di layar kecil.
+- Dropdown Supplier/Pelanggan/Kategori punya opsi tambah cepat ("+ Tambah Baru...") sehingga tidak perlu berpindah halaman saat mengisi form transaksi dari HP.
 
 ### Auto-Refresh (Tanpa Perlu Reload Manual)
 

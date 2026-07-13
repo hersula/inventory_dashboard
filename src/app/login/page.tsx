@@ -34,7 +34,13 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen w-full flex-col items-center justify-center bg-gradient-to-br from-brand-950 via-brand-800 to-brand-500 px-4 py-10">
+    <div
+      className="flex min-h-screen w-full flex-col items-center justify-center bg-gradient-to-br from-brand-950 via-brand-800 to-brand-500 px-4 py-10"
+      style={{
+        paddingTop: "max(2.5rem, env(safe-area-inset-top))",
+        paddingBottom: "max(2.5rem, env(safe-area-inset-bottom))",
+      }}
+    >
       <div className="mb-8 flex items-center gap-2 text-white">
         <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/15">
           <Boxes className="h-6 w-6" />
