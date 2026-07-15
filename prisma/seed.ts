@@ -1,6 +1,6 @@
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
-import { jurnalPengadaan, jurnalPenjualan } from "../src/lib/akuntansi";
+import { jurnalPengadaan, jurnalPenjualan, jurnalPembayaranHutang, generateNomorPembayaran } from "../src/lib/akuntansi";
 import { DEFAULT_AKUN } from "../src/lib/defaultAkun";
 
 const prisma = new PrismaClient();
@@ -139,6 +139,7 @@ async function main() {
           ppn: ppn1,
           total: total1,
           hpp: hpp1,
+          metodeBayar: "TUNAI",
           userId: admin.id,
         });
       } catch (e) {
@@ -184,11 +185,77 @@ async function main() {
           dpp: subtotal2,
           ppn: ppn2,
           total: total2,
+          metodeBayar: "TUNAI",
           userId: admin.id,
         });
       } catch (e) {
         console.warn("Lewati jurnal seed pengadaan:", (e as Error).message);
       }
+    }
+
+    // Contoh transaksi non-tunai supaya modul Hutang & Piutang ada data demo.
+    const bHutang = allBarang[0];
+    const qtyHutang = 20;
+    const subtotalHutang = Number(bHutang.hargaBeli) * qtyHutang;
+    const ppnHutang = Math.round(subtotalHutang * PPN_RATE);
+    const totalHutang = subtotalHutang + ppnHutang;
+    const pengadaanKredit = await prisma.pengadaan.create({
+      data: {
+        companyId: company.id,
+        nomor: `PO-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}-999`,
+        tanggal: now,
+        supplierId: supplier.id,
+        userId: admin.id,
+        metodeBayar: "TEMPO",
+        subtotal: subtotalHutang,
+        diskonPersen: 0,
+        diskonNominal: 0,
+        ppn: ppnHutang,
+        total: totalHutang,
+        detail: { create: [{ barangId: bHutang.id, qty: qtyHutang, hargaSatuan: bHutang.hargaBeli, subtotal: subtotalHutang }] },
+      },
+    });
+    try {
+      await jurnalPengadaan(prisma, {
+        companyId: company.id,
+        pengadaanId: pengadaanKredit.id,
+        nomor: pengadaanKredit.nomor,
+        tanggal: pengadaanKredit.tanggal,
+        dpp: subtotalHutang,
+        ppn: ppnHutang,
+        total: totalHutang,
+        metodeBayar: "TEMPO",
+        userId: admin.id,
+      });
+      // Baru dibayar sebagian, supaya "sisa hutang" terlihat di modul Hutang & Piutang.
+      const bayarSebagian = Math.round(totalHutang / 2);
+      const nomorBayar = await generateNomorPembayaran(prisma, company.id, "HUTANG");
+      const pembayaran = await prisma.pembayaran.create({
+        data: {
+          companyId: company.id,
+          nomor: nomorBayar,
+          tanggal: now,
+          tipe: "HUTANG",
+          referensiTipe: "pengadaan",
+          referensiId: pengadaanKredit.id,
+          jumlah: bayarSebagian,
+          metodeBayar: "TUNAI",
+          keterangan: "Pembayaran sebagian (contoh data seed)",
+          userId: admin.id,
+        },
+      });
+      await jurnalPembayaranHutang(prisma, {
+        companyId: company.id,
+        pembayaranId: pembayaran.id,
+        nomor: pembayaran.nomor,
+        tanggal: now,
+        jumlah: bayarSebagian,
+        metodeBayar: "TUNAI",
+        userId: admin.id,
+        keterangan: `Pembayaran hutang untuk ${pengadaanKredit.nomor}`,
+      });
+    } catch (e) {
+      console.warn("Lewati contoh hutang seed:", (e as Error).message);
     }
   }
 

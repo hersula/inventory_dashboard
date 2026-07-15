@@ -16,6 +16,7 @@ const updateSchema = z.object({
   catatan: z.string().optional().nullable(),
   diskonPersen: z.number().min(0).max(100).optional(),
   pakaiPpn: z.boolean().optional(),
+  metodeBayar: z.enum(["TUNAI", "KREDIT", "TEMPO"]).optional(),
   items: z.array(itemSchema).min(1, "Minimal 1 item barang"),
 });
 
@@ -27,6 +28,13 @@ function hitungRingkasan(items: { qty: number; hargaSatuan: number }[], diskonPe
   const ppn = pakaiPpn ? Math.round(dpp * PPN_RATE) : 0;
   const total = dpp + ppn;
   return { subtotal, diskonNominal, dpp, ppn, total };
+}
+
+async function adaPembayaran(companyId: number, pengadaanId: number) {
+  const count = await prisma.pembayaran.count({
+    where: { companyId, referensiTipe: "pengadaan", referensiId: pengadaanId },
+  });
+  return count > 0;
 }
 
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
@@ -51,12 +59,22 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
   const existing = await prisma.pengadaan.findFirst({ where: { id, companyId }, include: { detail: true } });
   if (!existing) return NextResponse.json({ message: "Data tidak ditemukan" }, { status: 404 });
 
+  if (await adaPembayaran(companyId, id)) {
+    return NextResponse.json(
+      {
+        message:
+          "Transaksi ini sudah punya riwayat pembayaran hutang, jadi tidak bisa diedit lagi (supaya nilai hutang tidak jadi tidak sinkron). Hapus dulu riwayat pembayarannya di modul Hutang & Piutang jika benar-benar perlu mengubah transaksi ini.",
+      },
+      { status: 409 }
+    );
+  }
+
   const body = await req.json();
   const parsed = updateSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json({ message: "Data tidak valid", issues: parsed.error.issues }, { status: 400 });
   }
-  const { items, supplierId, catatan, tanggal, diskonPersen = 0, pakaiPpn = true } = parsed.data;
+  const { items, supplierId, catatan, tanggal, diskonPersen = 0, pakaiPpn = true, metodeBayar = "TUNAI" } = parsed.data;
 
   // Pengadaan menambah stok saat dibuat. Saat diedit, kita hitung selisih
   // (delta) qty per barang antara data lama vs data baru, lalu terapkan
@@ -105,6 +123,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
         tanggal: tanggal ? new Date(tanggal) : existing.tanggal,
         supplierId: supplierId ?? null,
         catatan,
+        metodeBayar,
         subtotal,
         diskonPersen,
         diskonNominal,
@@ -134,6 +153,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
         dpp,
         ppn,
         total,
+        metodeBayar,
         userId: Number(session!.user.id),
       });
     } catch (err) {
@@ -150,12 +170,23 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
   const { error, session } = await requirePermission("pengadaan.manage");
   if (error) return error;
   const companyId = getCompanyId(session!);
+  const id = Number(params.id);
 
   const pengadaan = await prisma.pengadaan.findFirst({
-    where: { id: Number(params.id), companyId },
+    where: { id, companyId },
     include: { detail: true },
   });
   if (!pengadaan) return NextResponse.json({ message: "Data tidak ditemukan" }, { status: 404 });
+
+  if (await adaPembayaran(companyId, id)) {
+    return NextResponse.json(
+      {
+        message:
+          "Transaksi ini sudah punya riwayat pembayaran hutang dan tidak bisa dibatalkan. Hapus dulu riwayat pembayarannya di modul Hutang & Piutang.",
+      },
+      { status: 409 }
+    );
+  }
 
   await prisma.$transaction(async (tx) => {
     for (const item of pengadaan.detail) {

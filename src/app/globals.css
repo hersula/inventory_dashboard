@@ -44,6 +44,34 @@ input[type="number"] {
   -moz-appearance: textfield;
 }
 
+/* Mode cetak (Print) --------------------------------------------------- */
+/* Dipakai oleh halaman /pengadaan/print, /pengadaan/[id]/print,
+   /penjualan/print, /penjualan/[id]/print. Elemen ber-class "print-hide"
+   (sidebar, header, tombol aksi) disembunyikan saat dicetak, sementara
+   konten ber-class "print-area" ditata ulang jadi dokumen bersih di kertas. */
+@media print {
+  .print-hide {
+    display: none !important;
+  }
+  html,
+  body {
+    background: white !important;
+  }
+  main {
+    padding: 0 !important;
+  }
+  .print-area {
+    box-shadow: none !important;
+    border: none !important;
+    border-radius: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+  @page {
+    margin: 1.5cm;
+  }
+}
+
 .animate-pulse-dot {
   animation: pulse-dot 1.8s ease-in-out infinite;
 }

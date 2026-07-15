@@ -12,6 +12,7 @@ import {
   BookOpen,
   ScrollText,
   BarChart3,
+  HandCoins,
   X,
 } from "lucide-react";
 import { can, Role } from "@/lib/rbac";
@@ -33,6 +34,7 @@ const navItems: NavItem[] = [
   { href: "/penjualan", label: "Penjualan Barang", icon: Receipt, permission: "penjualan.view", section: "Utama" },
   { href: "/akuntansi", label: "Chart of Akun", icon: BookOpen, permission: "akuntansi.view", section: "Akuntansi" },
   { href: "/akuntansi/jurnal", label: "Jurnal Umum", icon: ScrollText, permission: "akuntansi.view", section: "Akuntansi" },
+  { href: "/akuntansi/pembayaran", label: "Hutang & Piutang", icon: HandCoins, permission: "akuntansi.view", section: "Akuntansi" },
   { href: "/akuntansi/laporan", label: "Laporan Keuangan", icon: BarChart3, permission: "akuntansi.view", section: "Akuntansi" },
   { href: "/users", label: "Manajemen User", icon: Users, permission: "users.manage", section: "Administrasi" },
 ];
@@ -55,12 +57,12 @@ export default function Sidebar({
     <>
       {open && (
         <div
-          className="fixed inset-0 z-30 bg-slate-900/40 lg:hidden"
+          className="fixed inset-0 z-30 bg-slate-900/40 lg:hidden print-hide"
           onClick={onClose}
         />
       )}
       <aside
-        className={`fixed inset-y-0 left-0 z-40 flex w-64 flex-col bg-slate-900 text-slate-200 transition-transform duration-200 lg:static lg:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-40 flex w-64 flex-col bg-slate-900 text-slate-200 transition-transform duration-200 lg:static lg:translate-x-0 print-hide ${
           open ? "translate-x-0" : "-translate-x-full"
         }`}
         style={{

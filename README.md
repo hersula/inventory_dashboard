@@ -27,10 +27,10 @@ Aplikasi ini bersifat **multi-tenant** — satu deployment bisa melayani banyak 
 | **Login** | Autentikasi email/password (NextAuth, JWT session), menyertakan konteks perusahaan (`companyId`) di setiap sesi |
 | **Dashboard** | Analisa barang **milik perusahaan yang login**: total jenis barang, nilai stok, tren penjualan vs pengadaan 6 bulan, komposisi kategori, barang terlaris, barang stok menipis |
 | **Master Barang** | CRUD data barang: kode, nama, kategori (dengan quick-add kategori baru langsung dari form), satuan, harga beli/jual, stok, stok minimum |
-| **Pengadaan Barang** | Transaksi barang masuk (dari supplier), dengan **diskon (%) & PPN 11%**. Menambah stok otomatis, quick-add supplier langsung dari form, riwayat transaksi, **edit transaksi** (stok disesuaikan otomatis berdasarkan selisih qty), batal transaksi (stok dikembalikan) |
-| **Penjualan Barang** | Transaksi barang keluar, dengan **diskon (%) & PPN 11%**. Mengurangi stok otomatis dengan validasi stok tersedia, quick-add pelanggan langsung dari form, riwayat transaksi, **edit transaksi** (stok disesuaikan otomatis, termasuk validasi jika qty baru melebihi stok tersedia), batal transaksi |
+| **Pengadaan Barang** | Transaksi barang masuk (dari supplier), dengan **diskon (%), PPN 11%, dan metode pembayaran (Tunai/Kredit/Tempo)**. Menambah stok otomatis, quick-add supplier langsung dari form, riwayat transaksi, **cetak per transaksi & cetak laporan semua transaksi**, **edit transaksi** (stok disesuaikan otomatis berdasarkan selisih qty), batal transaksi (stok dikembalikan) |
+| **Penjualan Barang** | Transaksi barang keluar, dengan **diskon (%), PPN 11%, dan metode pembayaran (Tunai/Transfer Bank/Kredit/Tempo)**. Mengurangi stok otomatis dengan validasi stok tersedia, quick-add pelanggan langsung dari form, riwayat transaksi, **cetak per transaksi & cetak laporan semua transaksi**, **edit transaksi** (stok disesuaikan otomatis, termasuk validasi jika qty baru melebihi stok tersedia), batal transaksi |
 | **Manajemen User** | CRUD user & role — **dibatasi hanya untuk user dalam perusahaan yang sama** (khusus Administrator) |
-| **Akuntansi** | Chart of Akun (COA), Jurnal Umum (manual + **otomatis** dari transaksi Pengadaan/Penjualan lewat double-entry bookkeeping), dan Laporan Keuangan (Laba Rugi & Neraca Saldo) |
+| **Akuntansi** | Chart of Akun (COA), Jurnal Umum (manual + **otomatis** dari transaksi Pengadaan/Penjualan lewat double-entry bookkeeping), **Pembayaran Hutang & Piutang** (pelunasan transaksi Kredit/Tempo), dan Laporan Keuangan (Laba Rugi & Neraca Saldo) |
 
 ## Role & Hak Akses
 
@@ -119,6 +119,8 @@ Buka [http://localhost:3000](http://localhost:3000) — Anda akan diarahkan ke h
 
 > **Catatan untuk instalasi yang sudah berjalan sebelum fitur diskon & PPN ditambahkan:** migrasi ini menambahkan kolom `subtotal`, `diskonPersen`, `diskonNominal`, `ppn` ke tabel `Pengadaan`/`Penjualan` — semuanya punya nilai default `0` sehingga migrasi aman untuk data lama (tidak perlu isi manual). Yang perlu dilakukan manual: tambahkan 2 akun baru — **PPN Masukan** (`1104`, Aset) dan **PPN Keluaran** (`2102`, Kewajiban) — di modul Akuntansi > Chart of Akun untuk setiap perusahaan yang sudah terdaftar, supaya jurnal otomatis PPN bisa ikut terposting pada transaksi baru.
 
+> **Catatan untuk instalasi yang sudah berjalan sebelum fitur metode pembayaran & Hutang/Piutang ditambahkan:** migrasi ini menambahkan kolom `metodeBayar` ke `Pengadaan`/`Penjualan` (default `TUNAI`, aman untuk data lama — transaksi lama otomatis dianggap tunai/lunas) dan tabel baru `Pembayaran`. Tambahkan juga akun **Bank** (`1105`, Aset) secara manual di Chart of Akun untuk perusahaan yang sudah terdaftar, supaya jurnal transaksi bermetode Transfer Bank bisa terposting.
+
 ### Build untuk produksi
 
 ```bash
@@ -141,9 +143,9 @@ src/
       layout.tsx         # Cek sesi + render Shell (sidebar & header)
       dashboard/
       master-barang/
-      pengadaan/
-      penjualan/
-      akuntansi/          # Chart of Akun, jurnal/, laporan/
+      pengadaan/          # + [id]/print/ (cetak per transaksi), print/ (cetak laporan semua)
+      penjualan/          # + [id]/print/ (cetak per transaksi), print/ (cetak laporan semua)
+      akuntansi/          # Chart of Akun, jurnal/, pembayaran/ (Hutang & Piutang), laporan/
       users/
     api/                # Route handler REST (satu folder per modul/resource)
       auth/[...nextauth]/
@@ -156,6 +158,7 @@ src/
       pelanggan/
       akun/
       jurnal/
+      pembayaran/          # + outstanding/ (daftar hutang/piutang yang perlu dibayar)
       laporan/
       users/
       dashboard/stats/
@@ -269,8 +272,8 @@ Urutan perhitungannya: `Subtotal → (- Diskon) → DPP → (+ PPN 11%) → Tota
 Nilai `subtotal`, `diskonPersen`, `diskonNominal`, `ppn`, dan `total` (grand total) semuanya disimpan terpisah di database (bukan cuma total akhir), supaya riwayat transaksi tetap bisa ditelusuri berapa diskon/pajak yang berlaku saat itu meski persentase diskon/aturan pajak berubah di kemudian hari.
 
 **Dampak ke Akuntansi** — jurnal otomatis (lihat bagian [Modul Akuntansi](#modul-akuntansi)) memisahkan PPN dari nilai persediaan/pendapatan, sesuai praktik akuntansi pajak:
-- Pengadaan: `Debit Persediaan` sebesar **DPP** (bukan termasuk PPN) + `Debit PPN Masukan` sebesar PPN, lawannya `Kredit Kas` sebesar total yang benar-benar dibayar.
-- Penjualan: `Kredit Pendapatan Penjualan` sebesar **DPP** + `Kredit PPN Keluaran` sebesar PPN, lawannya `Debit Kas` sebesar total yang diterima. HPP (harga pokok) tetap dihitung dari harga beli barang, tidak terpengaruh diskon/PPN sisi jual.
+- Pengadaan: `Debit Persediaan` sebesar **DPP** (bukan termasuk PPN) + `Debit PPN Masukan` sebesar PPN, lawannya `Kredit Kas` (jika Tunai) atau `Kredit Hutang Usaha` (jika Kredit/Tempo) sebesar total.
+- Penjualan: `Kredit Pendapatan Penjualan` sebesar **DPP** + `Kredit PPN Keluaran` sebesar PPN, lawannya `Debit Kas`/`Debit Bank`/`Debit Piutang Usaha` (tergantung metode bayar — lihat bagian berikut) sebesar total. HPP (harga pokok) tetap dihitung dari harga beli barang, tidak terpengaruh diskon/PPN sisi jual.
 
 Ini butuh 2 akun tambahan di Chart of Akun: **PPN Masukan** (`1104`, Aset) dan **PPN Keluaran** (`2102`, Kewajiban) — sudah termasuk di `src/lib/defaultAkun.ts` sehingga otomatis dibuat untuk perusahaan baru. Untuk perusahaan yang sudah terdaftar sebelum fitur ini ada, tambahkan kedua akun tersebut secara manual di modul Akuntansi > Chart of Akun agar jurnal PPN bisa terposting (jika belum ada, posting jurnal PPN akan gagal secara diam-diam — lihat catatan fail-safe di bagian Modul Akuntansi).
 
@@ -278,41 +281,72 @@ Ini butuh 2 akun tambahan di Chart of Akun: **PPN Masukan** (`1104`, Aset) dan *
 
 Dropdown "Supplier" (di form Pengadaan) dan "Pelanggan" (di form Penjualan) punya opsi **"+ Tambah Supplier/Pelanggan Baru..."** di baris paling bawah. Memilihnya membuka form kecil (nama, alamat, telepon, khusus supplier ada email) tanpa perlu keluar dari form transaksi yang sedang diisi — begitu tersimpan, data baru langsung otomatis terpilih dan form transaksi tetap terisi seperti semula.
 
+### Metode Pembayaran & Hutang/Piutang
+
+Form Pengadaan dan Penjualan punya field **Metode Pembayaran**:
+
+| Metode | Pengadaan | Penjualan | Efek |
+|---|---|---|---|
+| **Tunai** | ✅ | ✅ | Lunas seketika — langsung mengurangi/menambah akun **Kas** |
+| **Transfer Bank** | – | ✅ | Lunas seketika — langsung mengurangi/menambah akun **Bank** (`1105`) |
+| **Kredit** | ✅ | ✅ | Belum lunas — membentuk **Hutang Usaha** (Pengadaan) / **Piutang Usaha** (Penjualan) |
+| **Tempo** | ✅ | ✅ | Sama seperti Kredit (jatuh tempo pembayaran belakangan) — dari sisi akuntansi diperlakukan identik dengan Kredit |
+
+Transaksi dengan metode **Kredit**/**Tempo** muncul di **Akuntansi > Hutang & Piutang** (`/akuntansi/pembayaran`) sebagai item yang "Perlu Dibayar"/"Perlu Ditagih". Dari sana:
+
+- Klik **Bayar** untuk mencatat pelunasan (bisa sebagian/cicilan atau langsung lunas), pilih metode pelunasan (Tunai/Transfer), lalu sistem otomatis memposting jurnal `Debit Hutang Usaha / Kredit Kas atau Bank` (pembayaran hutang) atau `Debit Kas atau Bank / Kredit Piutang Usaha` (penerimaan piutang).
+- Sisa hutang/piutang dihitung **dinamis** (total transaksi dikurangi jumlah seluruh pembayaran yang tercatat), bukan disimpan sebagai kolom terpisah, supaya selalu akurat dan tidak berisiko tidak sinkron.
+- Riwayat pembayaran bisa dibatalkan (tombol hapus) jika salah catat — jurnal terkait ikut otomatis dihapus dan sisa hutang/piutang kembali seperti semula.
+- Untuk menjaga konsistensi, transaksi Pengadaan/Penjualan yang **sudah punya riwayat pembayaran** tidak bisa lagi diedit atau dibatalkan langsung — hapus dulu riwayat pembayarannya di modul Hutang & Piutang jika transaksi tersebut benar-benar perlu diubah.
+
+### Cetak (Print) Laporan Transaksi
+
+Setiap baris transaksi di Pengadaan dan Penjualan punya tombol cetak (ikon printer) untuk mencetak **bukti transaksi tunggal** (format invoice: info pihak terkait, daftar barang, ringkasan diskon/PPN/total, metode bayar, area tanda tangan). Tombol **"Cetak Laporan"** di toolbar mencetak **semua transaksi** yang sedang tampil (mengikuti filter pencarian yang aktif) sebagai satu laporan tabel dengan grand total di akhir.
+
+Halaman cetak (`/pengadaan/[id]/print`, `/pengadaan/print`, `/penjualan/[id]/print`, `/penjualan/print`) memakai layout khusus: sidebar & header otomatis disembunyikan saat mode cetak/print preview (lewat CSS `@media print` di `globals.css`), sehingga yang tercetak hanya dokumennya saja — tidak perlu library PDF tambahan, cukup dialog print bawaan browser (`window.print()`). Untuk menyimpan sebagai file PDF, pilih "Save as PDF" / "Simpan sebagai PDF" di dialog cetak browser.
+
 ## Modul Akuntansi
 
-Modul ini menerapkan **double-entry bookkeeping** (akuntansi berpasangan) sederhana yang terintegrasi dengan modul operasional, terdiri dari 3 halaman:
+Modul ini menerapkan **double-entry bookkeeping** (akuntansi berpasangan) sederhana yang terintegrasi dengan modul operasional, terdiri dari 4 halaman:
 
 ### 1. Chart of Akun (`/akuntansi`)
-Daftar akun keuangan (kode, nama, tipe: Aset/Kewajiban/Modal/Pendapatan/Beban, dan saldo normal). Sistem butuh 6 akun dengan kode tertentu (dibuat otomatis lewat `npm run prisma:seed` atau saat perusahaan baru mendaftar, lihat `src/lib/akuntansi.ts` → `KODE_AKUN`) untuk posting jurnal otomatis:
+Daftar akun keuangan (kode, nama, tipe: Aset/Kewajiban/Modal/Pendapatan/Beban, dan saldo normal). Sistem butuh 8 akun dengan kode tertentu (dibuat otomatis lewat `npm run prisma:seed` atau saat perusahaan baru mendaftar, lihat `src/lib/akuntansi.ts` → `KODE_AKUN`) untuk posting jurnal otomatis:
 
 | Kode | Akun | Dipakai untuk |
 |---|---|---|
-| 1101 | Kas | Sisi kas di setiap transaksi pengadaan/penjualan tunai |
+| 1101 | Kas | Sisi kas untuk transaksi bermetode Tunai |
+| 1102 | Piutang Usaha | Penjualan bermetode Kredit/Tempo, berkurang saat piutang dilunasi |
 | 1103 | Persediaan Barang Dagang | Nilai stok barang dagang (sebesar DPP, tidak termasuk PPN) |
 | 1104 | PPN Masukan | PPN dari transaksi Pengadaan (piutang pajak, bisa dikreditkan) |
+| 1105 | Bank | Sisi kas untuk transaksi bermetode Transfer Bank |
+| 2101 | Hutang Usaha | Pengadaan bermetode Kredit/Tempo, berkurang saat hutang dilunasi |
 | 2102 | PPN Keluaran | PPN dari transaksi Penjualan (utang pajak ke kas negara) |
 | 4101 | Pendapatan Penjualan | Pendapatan dari transaksi penjualan (sebesar DPP, tidak termasuk PPN) |
 | 5101 | Harga Pokok Penjualan (HPP) | Beban pokok atas barang yang terjual |
 
-Akun lain (Piutang, Hutang Usaha, Modal, Beban Operasional/Gaji/Sewa) sudah disiapkan di seed sebagai contoh dan bisa dipakai untuk jurnal manual.
+Akun lain (Modal, Beban Operasional/Gaji/Sewa) sudah disiapkan di seed sebagai contoh dan bisa dipakai untuk jurnal manual.
 
 ### 2. Jurnal Umum (`/akuntansi/jurnal`)
 Menampilkan seluruh jurnal — baik yang **otomatis** dibuat sistem maupun **manual**:
 
-- **Otomatis** — setiap kali transaksi Pengadaan atau Penjualan dibuat, diedit, atau dibatalkan, sistem otomatis memposting/menyesuaikan jurnalnya (lihat detail di bawah). Jurnal jenis ini tidak bisa dihapus langsung dari sini — ubah lewat transaksi sumbernya di modul Pengadaan/Penjualan agar datanya tetap konsisten.
+- **Otomatis** — setiap kali transaksi Pengadaan, Penjualan, atau Pembayaran Hutang/Piutang dibuat/diedit/dibatalkan, sistem otomatis memposting/menyesuaikan jurnalnya (lihat detail di bawah). Jurnal jenis ini tidak bisa dihapus langsung dari sini — ubah lewat transaksi sumbernya agar datanya tetap konsisten.
 - **Manual** — untuk mencatat transaksi keuangan di luar pengadaan/penjualan (mis. bayar gaji, sewa, setoran modal). Form mendukung banyak baris debit/kredit dan memvalidasi bahwa **total debit harus sama dengan total kredit** sebelum bisa disimpan.
 
-**Logika posting otomatis** (lihat `src/lib/akuntansi.ts`), memperhitungkan diskon & PPN 11% dari transaksi (lihat [bagian Diskon & PPN](#diskon--ppn-11)):
+**Logika posting otomatis** (lihat `src/lib/akuntansi.ts`), memperhitungkan diskon, PPN 11%, dan metode pembayaran dari transaksi (lihat [bagian Diskon & PPN](#diskon--ppn-11) dan [bagian Metode Pembayaran](#metode-pembayaran--hutangpiutang)):
 
-- **Pengadaan** (asumsi pembelian tunai): `Debit Persediaan` sebesar DPP, `Debit PPN Masukan` sebesar PPN (jika ada), `Kredit Kas` sebesar total yang dibayar.
+- **Pengadaan**: `Debit Persediaan` sebesar DPP, `Debit PPN Masukan` sebesar PPN (jika ada), lawannya `Kredit Kas` (metode Tunai) atau `Kredit Hutang Usaha` (metode Kredit/Tempo).
 - **Penjualan**: tiga bagian sekaligus —
-  1. Pengakuan pendapatan: `Debit Kas` sebesar total diterima, `Kredit Pendapatan Penjualan` sebesar DPP.
+  1. Pengakuan penjualan: `Debit Kas`/`Debit Bank`/`Debit Piutang Usaha` (tergantung metode bayar) sebesar total diterima, `Kredit Pendapatan Penjualan` sebesar DPP.
   2. Pengakuan PPN: `Kredit PPN Keluaran` sebesar PPN (jika ada).
-  3. Pengakuan HPP: `Debit HPP` / `Kredit Persediaan` sebesar qty × **harga beli** barang saat itu (tidak terpengaruh diskon/PPN sisi jual).
+  3. Pengakuan HPP: `Debit HPP` / `Kredit Persediaan` sebesar qty × **harga beli** barang saat itu (tidak terpengaruh diskon/PPN/metode bayar sisi jual).
+- **Pembayaran Hutang/Piutang** (lihat halaman ke-3 di bawah): `Debit Hutang Usaha / Kredit Kas atau Bank` (pelunasan hutang) atau `Debit Kas atau Bank / Kredit Piutang Usaha` (penerimaan piutang).
 
-Posting bersifat **fail-safe**: jika Chart of Akun belum disiapkan (instalasi baru yang belum di-seed, atau akun PPN Masukan/Keluaran belum dibuat), transaksi pengadaan/penjualan tetap berhasil disimpan — jurnalnya cukup diposting manual belakangan. Errornya dicatat di server log (`console.error`), tidak menggagalkan transaksi operasional.
+Posting bersifat **fail-safe**: jika Chart of Akun belum disiapkan (instalasi baru yang belum di-seed, atau salah satu akun di atas belum dibuat), transaksi tetap berhasil disimpan — jurnalnya cukup diposting manual belakangan. Errornya dicatat di server log (`console.error`), tidak menggagalkan transaksi operasional.
 
-### 3. Laporan Keuangan (`/akuntansi/laporan`)
+### 3. Pembayaran Hutang & Piutang (`/akuntansi/pembayaran`)
+Lihat penjelasan lengkap di [bagian Metode Pembayaran & Hutang/Piutang](#metode-pembayaran--hutangpiutang) di atas.
+
+### 4. Laporan Keuangan (`/akuntansi/laporan`)
 - **Laba Rugi** — total Pendapatan dikurangi total Beban (termasuk HPP) dalam rentang tanggal yang dipilih (default: bulan berjalan).
 - **Neraca Saldo** — akumulasi debit/kredit tiap akun sejak awal, dengan indikator apakah total debit = total kredit di seluruh sistem (tanda jurnal sudah balance).
 

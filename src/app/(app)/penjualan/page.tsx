@@ -2,10 +2,11 @@
 
 import { useEffect, useMemo, useState, useCallback, FormEvent } from "react";
 import { useSession } from "next-auth/react";
-import { Plus, Pencil, Trash2, Loader2, XCircle, Eye, UserPlus } from "lucide-react";
+import { Plus, Pencil, Trash2, Loader2, XCircle, Eye, UserPlus, Printer } from "lucide-react";
 import DataTable, { Column } from "@/components/DataTable";
 import Modal from "@/components/Modal";
 import LiveIndicator from "@/components/LiveIndicator";
+import Badge from "@/components/Badge";
 import { can } from "@/lib/rbac";
 import { useAutoRefresh, notifyDataChanged } from "@/lib/useAutoRefresh";
 
@@ -18,11 +19,14 @@ type Penjualan = {
   tanggal: string;
   pelanggan: Pelanggan | null;
   user: { name: string };
+  metodeBayar: "TUNAI" | "TRANSFER" | "KREDIT" | "TEMPO";
   subtotal: string | number;
   diskonPersen: string | number;
   diskonNominal: string | number;
   ppn: string | number;
   total: string | number;
+  totalDibayar?: number;
+  sisa?: number;
   catatan: string | null;
   detail: Item[];
 };
@@ -33,6 +37,13 @@ const emptyPelangganForm = { nama: "", alamat: "", telepon: "" };
 const rupiah = (v: number) => `Rp ${Math.round(v).toLocaleString("id-ID")}`;
 const NEW_PELANGGAN = "__new__";
 const PPN_RATE = 0.11;
+const METODE_LABEL: Record<string, string> = { TUNAI: "Tunai", TRANSFER: "Transfer Bank", KREDIT: "Kredit", TEMPO: "Tempo" };
+const metodeTone: Record<string, "green" | "brand" | "amber" | "slate"> = {
+  TUNAI: "green",
+  TRANSFER: "brand",
+  KREDIT: "amber",
+  TEMPO: "amber",
+};
 
 export default function PenjualanPage() {
   const { data: session } = useSession();
@@ -57,6 +68,7 @@ export default function PenjualanPage() {
   const [catatan, setCatatan] = useState("");
   const [diskonPersen, setDiskonPersen] = useState("0");
   const [pakaiPpn, setPakaiPpn] = useState(true);
+  const [metodeBayar, setMetodeBayar] = useState<"TUNAI" | "TRANSFER" | "KREDIT" | "TEMPO">("TUNAI");
   const [rows, setRows] = useState<Row[]>([{ ...emptyRow }]);
   const [originalQty, setOriginalQty] = useState<Record<number, number>>({});
 
@@ -111,6 +123,7 @@ export default function PenjualanPage() {
     setCatatan("");
     setDiskonPersen("0");
     setPakaiPpn(true);
+    setMetodeBayar("TUNAI");
     setRows([{ ...emptyRow }]);
     setOriginalQty({});
     setError("");
@@ -124,6 +137,7 @@ export default function PenjualanPage() {
     setCatatan(p.catatan ?? "");
     setDiskonPersen(String(p.diskonPersen ?? 0));
     setPakaiPpn(Number(p.ppn) > 0);
+    setMetodeBayar(p.metodeBayar ?? "TUNAI");
     setRows([
       ...p.detail.map((d) => ({
         barangId: String(d.barang.id),
@@ -233,6 +247,7 @@ export default function PenjualanPage() {
         catatan: catatan || null,
         diskonPersen: Math.min(100, Math.max(0, Number(diskonPersen) || 0)),
         pakaiPpn,
+        metodeBayar,
         items: validRows.map((r) => ({
           barangId: Number(r.barangId),
           qty: Number(r.qty),
@@ -272,6 +287,15 @@ export default function PenjualanPage() {
       { header: "No. Transaksi", render: (p) => <span className="font-medium text-slate-700">{p.nomor}</span> },
       { header: "Tanggal", render: (p) => new Date(p.tanggal).toLocaleDateString("id-ID") },
       { header: "Pelanggan", render: (p) => p.pelanggan?.nama ?? "Umum" },
+      {
+        header: "Metode Bayar",
+        render: (p) => (
+          <div className="space-y-0.5">
+            <Badge tone={metodeTone[p.metodeBayar] ?? "slate"}>{METODE_LABEL[p.metodeBayar] ?? p.metodeBayar}</Badge>
+            {!!p.sisa && p.sisa > 0 && <p className="text-xs text-red-500">Sisa {rupiah(p.sisa)}</p>}
+          </div>
+        ),
+      },
       { header: "Jumlah Item", render: (p) => `${p.detail.length} item` },
       { header: "Total", render: (p) => <span className="font-medium">{rupiah(Number(p.total))}</span> },
       { header: "Kasir", render: (p) => p.user?.name ?? "-" },
@@ -286,6 +310,9 @@ export default function PenjualanPage() {
             >
               <Eye className="h-4 w-4" />
             </button>
+            <a href={`/penjualan/${p.id}/print`} target="_blank" rel="noopener noreferrer" className="icon-btn" title="Cetak">
+              <Printer className="h-4 w-4" />
+            </a>
             {canManage && (
               <button
                 onClick={() => openEdit(p)}
@@ -327,12 +354,23 @@ export default function PenjualanPage() {
         searchPlaceholder="Cari no. transaksi..."
         emptyMessage="Belum ada transaksi penjualan."
         toolbarRight={
-          canManage && (
-            <button onClick={openCreate} className="btn-primary">
-              <Plus className="h-4 w-4" />
-              Transaksi Baru
-            </button>
-          )
+          <div className="flex items-center gap-2">
+            <a
+              href={`/penjualan/print${search ? `?q=${encodeURIComponent(search)}` : ""}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn-secondary"
+            >
+              <Printer className="h-4 w-4" />
+              Cetak Laporan
+            </a>
+            {canManage && (
+              <button onClick={openCreate} className="btn-primary">
+                <Plus className="h-4 w-4" />
+                Transaksi Baru
+              </button>
+            )}
+          </div>
         }
       />
 
@@ -439,6 +477,21 @@ export default function PenjualanPage() {
           <div>
             <label className="label">Catatan (opsional)</label>
             <textarea className="input" rows={2} value={catatan} onChange={(e) => setCatatan(e.target.value)} />
+          </div>
+
+          <div>
+            <label className="label">Metode Pembayaran</label>
+            <select className="input" value={metodeBayar} onChange={(e) => setMetodeBayar(e.target.value as typeof metodeBayar)}>
+              <option value="TUNAI">Tunai</option>
+              <option value="TRANSFER">Transfer Bank</option>
+              <option value="KREDIT">Kredit</option>
+              <option value="TEMPO">Tempo</option>
+            </select>
+            {(metodeBayar === "KREDIT" || metodeBayar === "TEMPO") && (
+              <p className="mt-1 text-xs text-amber-600">
+                Transaksi ini akan tercatat sebagai piutang dari pelanggan — bisa ditagih belakangan lewat modul Akuntansi &gt; Hutang &amp; Piutang.
+              </p>
+            )}
           </div>
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -574,6 +627,18 @@ export default function PenjualanPage() {
                 <p className="text-slate-400">Pelanggan</p>
                 <p className="font-medium text-slate-700">{detailOpen.pelanggan?.nama ?? "Umum"}</p>
               </div>
+              <div>
+                <p className="text-slate-400">Metode Bayar</p>
+                <Badge tone={metodeTone[detailOpen.metodeBayar] ?? "slate"}>
+                  {METODE_LABEL[detailOpen.metodeBayar] ?? detailOpen.metodeBayar}
+                </Badge>
+              </div>
+              {!!detailOpen.sisa && detailOpen.sisa > 0 && (
+                <div>
+                  <p className="text-slate-400">Sisa Belum Diterima</p>
+                  <p className="font-medium text-red-600">{rupiah(detailOpen.sisa)}</p>
+                </div>
+              )}
             </div>
             <div className="divide-y divide-slate-100 rounded-lg border border-slate-100">
               {detailOpen.detail.map((d) => (

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requirePermission, getCompanyId } from "@/lib/apiAuth";
-import { jurnalPengadaan, PPN_RATE } from "@/lib/akuntansi";
+import { jurnalPengadaan, PPN_RATE, isLunasDiMuka } from "@/lib/akuntansi";
 import { z } from "zod";
 
 const itemSchema = z.object({
@@ -16,6 +16,7 @@ const pengadaanSchema = z.object({
   catatan: z.string().optional().nullable(),
   diskonPersen: z.number().min(0).max(100).optional(),
   pakaiPpn: z.boolean().optional(),
+  metodeBayar: z.enum(["TUNAI", "KREDIT", "TEMPO"]).optional(),
   items: z.array(itemSchema).min(1, "Minimal 1 item barang"),
 });
 
@@ -55,7 +56,25 @@ export async function GET(req: NextRequest) {
     orderBy: { tanggal: "desc" },
   });
 
-  return NextResponse.json(data);
+  // Perkaya dengan total pembayaran yang sudah masuk (untuk metode
+  // KREDIT/TEMPO) supaya UI bisa menampilkan sisa hutang tanpa query terpisah.
+  const bayarAgg = await prisma.pembayaran.groupBy({
+    by: ["referensiId"],
+    where: { companyId, referensiTipe: "pengadaan", referensiId: { in: data.map((d) => d.id) } },
+    _sum: { jumlah: true },
+  });
+  const bayarMap = new Map(bayarAgg.map((b) => [b.referensiId, Number(b._sum.jumlah ?? 0)]));
+
+  const enriched = data.map((p) => {
+    const totalDibayar = bayarMap.get(p.id) ?? 0;
+    return {
+      ...p,
+      totalDibayar,
+      sisa: isLunasDiMuka(p.metodeBayar) ? 0 : Number(p.total) - totalDibayar,
+    };
+  });
+
+  return NextResponse.json(enriched);
 }
 
 export async function POST(req: NextRequest) {
@@ -69,7 +88,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ message: "Data tidak valid", issues: parsed.error.issues }, { status: 400 });
   }
 
-  const { items, supplierId, catatan, tanggal, diskonPersen = 0, pakaiPpn = true } = parsed.data;
+  const { items, supplierId, catatan, tanggal, diskonPersen = 0, pakaiPpn = true, metodeBayar = "TUNAI" } = parsed.data;
 
   // Pastikan semua barang yang dipilih benar-benar milik perusahaan ini
   // (mencegah user mereferensikan barangId milik perusahaan lain).
@@ -91,6 +110,7 @@ export async function POST(req: NextRequest) {
         supplierId: supplierId ?? null,
         userId: Number(session!.user.id),
         catatan,
+        metodeBayar,
         subtotal,
         diskonPersen,
         diskonNominal,
@@ -127,6 +147,7 @@ export async function POST(req: NextRequest) {
         dpp,
         ppn,
         total,
+        metodeBayar,
         userId: Number(session!.user.id),
       });
     } catch (err) {

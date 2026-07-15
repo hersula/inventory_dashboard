@@ -39,6 +39,7 @@ model Company {
   penjualan     Penjualan[]
   akun          Akun[]
   jurnalEntries JurnalEntry[]
+  pembayaran    Pembayaran[]
 }
 
 model User {
@@ -54,6 +55,7 @@ model User {
   pengadaan     Pengadaan[]
   penjualan     Penjualan[]
   jurnalEntries JurnalEntry[]
+  pembayaran    Pembayaran[]
 
   @@index([companyId])
 }
@@ -116,6 +118,17 @@ model Barang {
   @@index([kategoriId])
 }
 
+// Metode pembayaran transaksi. TUNAI & TRANSFER dianggap "lunas di muka"
+// (langsung mengurangi/menambah Kas atau Bank). KREDIT & TEMPO dianggap
+// "belum lunas" (membentuk Hutang Usaha untuk Pengadaan, atau Piutang Usaha
+// untuk Penjualan) — dilunasi belakangan lewat modul Pembayaran Hutang/Piutang.
+enum MetodeBayar {
+  TUNAI
+  TRANSFER
+  KREDIT
+  TEMPO
+}
+
 model Pengadaan {
   id            Int               @id @default(autoincrement())
   companyId     Int
@@ -128,6 +141,7 @@ model Pengadaan {
   user          User              @relation(fields: [userId], references: [id])
   status        String            @default("SELESAI")
   catatan       String?
+  metodeBayar   MetodeBayar       @default(TUNAI)
   // subtotal = jumlah (qty x harga satuan) seluruh item, sebelum diskon/PPN.
   subtotal      Decimal           @db.Decimal(15, 2) @default(0)
   diskonPersen  Decimal           @db.Decimal(5, 2)  @default(0)
@@ -169,6 +183,7 @@ model Penjualan {
   user          User              @relation(fields: [userId], references: [id])
   status        String            @default("SELESAI")
   catatan       String?
+  metodeBayar   MetodeBayar       @default(TUNAI)
   // subtotal = jumlah (qty x harga satuan) seluruh item, sebelum diskon/PPN.
   subtotal      Decimal           @db.Decimal(15, 2) @default(0)
   diskonPersen  Decimal           @db.Decimal(5, 2)  @default(0)
@@ -270,4 +285,50 @@ model JurnalDetail {
 
   @@index([jurnalEntryId])
   @@index([akunId])
+}
+
+// ---------------------------------------------------------------
+// PEMBAYARAN HUTANG & PIUTANG
+// Dipakai untuk melunasi (sebagian/seluruhnya) transaksi Pengadaan/Penjualan
+// yang metode bayarnya KREDIT/TEMPO (lihat enum MetodeBayar). Setiap
+// pembayaran otomatis memposting jurnal (lihat src/lib/akuntansi.ts):
+//   - HUTANG (bayar ke supplier): Debit Hutang Usaha / Kredit Kas atau Bank
+//   - PIUTANG (terima dari pelanggan): Debit Kas atau Bank / Kredit Piutang Usaha
+// Sisa hutang/piutang per transaksi dihitung dinamis (total transaksi -
+// jumlah seluruh Pembayaran yang referensiId-nya sama), bukan disimpan
+// sebagai kolom terpisah, supaya tidak ada risiko data tidak sinkron.
+// ---------------------------------------------------------------
+
+enum TipePembayaran {
+  HUTANG
+  PIUTANG
+}
+
+// Pelunasan hutang/piutang hanya lewat kas/bank (tidak ada lagi termin
+// berjenjang di tahap ini) — cukup untuk mencatat kapan & berapa dibayar.
+enum MetodeBayarPelunasan {
+  TUNAI
+  TRANSFER
+}
+
+model Pembayaran {
+  id            Int                   @id @default(autoincrement())
+  companyId     Int
+  company       Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  nomor         String
+  tanggal       DateTime              @default(now())
+  tipe          TipePembayaran
+  // referensiTipe: "pengadaan" | "penjualan"
+  referensiTipe String
+  referensiId   Int
+  jumlah        Decimal               @db.Decimal(15, 2)
+  metodeBayar   MetodeBayarPelunasan  @default(TUNAI)
+  keterangan    String?
+  userId        Int
+  user          User                  @relation(fields: [userId], references: [id])
+  createdAt     DateTime              @default(now())
+
+  @@unique([companyId, nomor])
+  @@index([referensiTipe, referensiId])
+  @@index([companyId])
 }

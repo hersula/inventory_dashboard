@@ -80,11 +80,7 @@ export async function POST(req: NextRequest) {
   if (ownedCount !== new Set(akunIds).size) {
     return NextResponse.json({ message: "Salah satu akun tidak ditemukan" }, { status: 400 });
   }
-  // Normalisasi agar keterangan tidak bernilai null
-  const normalizedLines = lines.map((l) => ({
-    ...l,
-    keterangan: l.keterangan ?? undefined,
-  }));
+
   try {
     const result = await postJurnal(prisma, {
       companyId,
@@ -93,7 +89,7 @@ export async function POST(req: NextRequest) {
       referensiTipe: "manual",
       referensiId: null,
       userId: Number(session!.user.id),
-      lines: normalizedLines,
+      lines,
     });
     return NextResponse.json(result, { status: 201 });
   } catch (err: any) {

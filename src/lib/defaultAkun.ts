@@ -8,6 +8,7 @@ export const DEFAULT_AKUN: {
   { kode: "1102", nama: "Piutang Usaha", tipe: "ASET", saldoNormal: "DEBIT" },
   { kode: "1103", nama: "Persediaan Barang Dagang", tipe: "ASET", saldoNormal: "DEBIT" },
   { kode: "1104", nama: "PPN Masukan", tipe: "ASET", saldoNormal: "DEBIT" },
+  { kode: "1105", nama: "Bank", tipe: "ASET", saldoNormal: "DEBIT" },
   { kode: "2101", nama: "Hutang Usaha", tipe: "KEWAJIBAN", saldoNormal: "KREDIT" },
   { kode: "2102", nama: "PPN Keluaran", tipe: "KEWAJIBAN", saldoNormal: "KREDIT" },
   { kode: "3101", nama: "Modal Pemilik", tipe: "MODAL", saldoNormal: "KREDIT" },
