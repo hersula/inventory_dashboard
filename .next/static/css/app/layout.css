@@ -751,6 +751,9 @@ video {
 .mb-1 {
   margin-bottom: 0.25rem;
 }
+.mb-16 {
+  margin-bottom: 4rem;
+}
 .mb-2 {
   margin-bottom: 0.5rem;
 }
@@ -808,6 +811,9 @@ video {
 .h-2 {
   height: 0.5rem;
 }
+.h-24 {
+  height: 6rem;
+}
 .h-28 {
   height: 7rem;
 }
@@ -828,6 +834,9 @@ video {
 }
 .h-6 {
   height: 1.5rem;
+}
+.h-64 {
+  height: 16rem;
 }
 .h-8 {
   height: 2rem;
@@ -898,6 +907,12 @@ video {
 }
 .max-w-2xl {
   max-width: 42rem;
+}
+.max-w-3xl {
+  max-width: 48rem;
+}
+.max-w-4xl {
+  max-width: 56rem;
 }
 .max-w-lg {
   max-width: 32rem;
@@ -994,6 +1009,14 @@ video {
 }
 .gap-4 {
   gap: 1rem;
+}
+.gap-8 {
+  gap: 2rem;
+}
+.space-y-0\.5 > :not([hidden]) ~ :not([hidden]) {
+  --tw-space-y-reverse: 0;
+  margin-top: calc(0.125rem * calc(1 - var(--tw-space-y-reverse)));
+  margin-bottom: calc(0.125rem * var(--tw-space-y-reverse));
 }
 .space-y-1 > :not([hidden]) ~ :not([hidden]) {
   --tw-space-y-reverse: 0;
@@ -1098,6 +1121,10 @@ video {
 .border-slate-300 {
   --tw-border-opacity: 1;
   border-color: rgb(203 213 225 / var(--tw-border-opacity, 1));
+}
+.border-slate-400 {
+  --tw-border-opacity: 1;
+  border-color: rgb(148 163 184 / var(--tw-border-opacity, 1));
 }
 .border-slate-800 {
   --tw-border-opacity: 1;
@@ -1214,6 +1241,14 @@ video {
 .p-8 {
   padding: 2rem;
 }
+.\!px-3 {
+  padding-left: 0.75rem !important;
+  padding-right: 0.75rem !important;
+}
+.\!py-1\.5 {
+  padding-top: 0.375rem !important;
+  padding-bottom: 0.375rem !important;
+}
 .px-1 {
   padding-left: 0.25rem;
   padding-right: 0.25rem;
@@ -1274,17 +1309,34 @@ video {
   padding-top: 1.25rem;
   padding-bottom: 1.25rem;
 }
+.py-6 {
+  padding-top: 1.5rem;
+  padding-bottom: 1.5rem;
+}
+.py-8 {
+  padding-top: 2rem;
+  padding-bottom: 2rem;
+}
 .pb-1 {
   padding-bottom: 0.25rem;
 }
 .pb-2\.5 {
   padding-bottom: 0.625rem;
 }
+.pb-4 {
+  padding-bottom: 1rem;
+}
 .pl-9 {
   padding-left: 2.25rem;
 }
+.pt-1 {
+  padding-top: 0.25rem;
+}
 .pt-1\.5 {
   padding-top: 0.375rem;
+}
+.pt-10 {
+  padding-top: 2.5rem;
 }
 .pt-2 {
   padding-top: 0.5rem;
@@ -1309,6 +1361,10 @@ video {
   font-size: 1rem;
   line-height: 1.5rem;
 }
+.text-lg {
+  font-size: 1.125rem;
+  line-height: 1.75rem;
+}
 .text-sm {
   font-size: 0.875rem;
   line-height: 1.25rem;
@@ -1320,6 +1376,9 @@ video {
 .text-xs {
   font-size: 0.75rem;
   line-height: 1rem;
+}
+.font-bold {
+  font-weight: 700;
 }
 .font-medium {
   font-weight: 500;
@@ -1368,6 +1427,10 @@ video {
 .text-brand-700 {
   --tw-text-opacity: 1;
   color: rgb(33 49 214 / var(--tw-text-opacity, 1));
+}
+.text-emerald-400 {
+  --tw-text-opacity: 1;
+  color: rgb(52 211 153 / var(--tw-text-opacity, 1));
 }
 .text-emerald-600 {
   --tw-text-opacity: 1;
@@ -1504,6 +1567,34 @@ body {
 
 input[type="number"] {
   -moz-appearance: textfield;
+}
+
+/* Mode cetak (Print) --------------------------------------------------- */
+/* Dipakai oleh halaman /pengadaan/print, /pengadaan/[id]/print,
+   /penjualan/print, /penjualan/[id]/print. Elemen ber-class "print-hide"
+   (sidebar, header, tombol aksi) disembunyikan saat dicetak, sementara
+   konten ber-class "print-area" ditata ulang jadi dokumen bersih di kertas. */
+@media print {
+  .print-hide {
+    display: none !important;
+  }
+  html,
+  body {
+    background: white !important;
+  }
+  main {
+    padding: 0 !important;
+  }
+  .print-area {
+    box-shadow: none !important;
+    border: none !important;
+    border-radius: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+  @page {
+    margin: 1.5cm;
+  }
 }
 
 .animate-pulse-dot {

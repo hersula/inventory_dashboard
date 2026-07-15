@@ -45,19 +45,23 @@ async function main() {
   }
   const kategoris = await prisma.kategori.findMany({ where: { companyId: company.id } });
 
-  const supplier = await prisma.supplier.create({
-    data: {
-      companyId: company.id,
-      nama: "PT Sumber Makmur",
-      alamat: "Jl. Industri No. 10, Jakarta",
-      telepon: "021-5551234",
-      email: "sales@sumbermakmur.co.id",
-    },
-  });
+  const supplier =
+    (await prisma.supplier.findFirst({ where: { companyId: company.id, nama: "PT Sumber Makmur" } })) ??
+    (await prisma.supplier.create({
+      data: {
+        companyId: company.id,
+        nama: "PT Sumber Makmur",
+        alamat: "Jl. Industri No. 10, Jakarta",
+        telepon: "021-5551234",
+        email: "sales@sumbermakmur.co.id",
+      },
+    }));
 
-  const pelanggan = await prisma.pelanggan.create({
-    data: { companyId: company.id, nama: "Toko Berkah Jaya", alamat: "Jl. Merdeka No. 5, Bogor", telepon: "0251-4441234" },
-  });
+  const pelanggan =
+    (await prisma.pelanggan.findFirst({ where: { companyId: company.id, nama: "Toko Berkah Jaya" } })) ??
+    (await prisma.pelanggan.create({
+      data: { companyId: company.id, nama: "Toko Berkah Jaya", alamat: "Jl. Merdeka No. 5, Bogor", telepon: "0251-4441234" },
+    }));
 
   const barangData = [
     { kode: "BRG-001", nama: "Mouse Wireless Logitech", kategori: "Elektronik", satuan: "pcs", hargaBeli: 65000, hargaJual: 95000, stok: 42, stokMinimum: 10 },
@@ -93,7 +97,14 @@ async function main() {
   const allBarang = await prisma.barang.findMany({ where: { companyId: company.id } });
   const PPN_RATE = 0.11;
 
-  if (admin && allBarang.length > 0) {
+  // Guard idempotent: transaksi & pembayaran contoh (termasuk nomor transaksi
+  // uniknya) hanya dibuat SEKALI per perusahaan. Tanpa ini, menjalankan ulang
+  // "npm run prisma:seed" (mis. setelah percobaan pertama gagal di tengah
+  // jalan) akan bentrok dengan nomor transaksi yang sudah ada dan membuat
+  // seed selalu gagal (exit code 1).
+  const sudahAdaTransaksi = admin ? await prisma.penjualan.count({ where: { companyId: company.id } }) : 0;
+
+  if (admin && allBarang.length > 0 && sudahAdaTransaksi === 0) {
     const now = new Date();
     for (let i = 0; i < 6; i++) {
       const tanggal = new Date(now.getFullYear(), now.getMonth() - i, 12);
@@ -257,6 +268,8 @@ async function main() {
     } catch (e) {
       console.warn("Lewati contoh hutang seed:", (e as Error).message);
     }
+  } else if (sudahAdaTransaksi > 0) {
+    console.log("Transaksi & pembayaran contoh sudah pernah dibuat sebelumnya — dilewati (aman dijalankan ulang).");
   }
 
   console.log("Seed selesai.");
@@ -269,7 +282,22 @@ async function main() {
 
 main()
   .catch((e) => {
+    console.error("\nSeed gagal dijalankan. Detail error:\n");
     console.error(e);
+
+    const code = e?.code;
+    console.error("\n--- Kemungkinan penyebab & solusinya ---");
+    if (code === "P1001" || /ECONNREFUSED|connect/i.test(String(e?.message))) {
+      console.error("• Tidak bisa konek ke database. Cek apakah MySQL sedang jalan dan DATABASE_URL di file .env sudah benar.");
+    } else if (code === "P2021" || /doesn't exist|does not exist/i.test(String(e?.message))) {
+      console.error("• Tabel belum ada di database. Jalankan dulu: npx prisma migrate dev");
+    } else if (code === "P2002") {
+      console.error("• Data duplikat (nomor transaksi/kode/email sudah ada). Kemungkinan seed pernah jalan sebagian sebelumnya.");
+      console.error("  Coba jalankan lagi (script ini sudah dibuat aman untuk dijalankan berkali-kali/idempotent).");
+      console.error("  Jika masih gagal, field mana yang bentrok bisa dilihat di 'target' pada detail error di atas.");
+    } else {
+      console.error("• Penyebab tidak dikenali otomatis — salin seluruh pesan error di atas untuk ditelusuri lebih lanjut.");
+    }
     process.exit(1);
   })
   .finally(async () => {
