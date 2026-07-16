@@ -1,20 +1,7 @@
 {
-  "/api/dashboard/stats/route": "app/api/dashboard/stats/route.js",
-  "/api/auth/[...nextauth]/route": "app/api/auth/[...nextauth]/route.js",
-  "/api/users/route": "app/api/users/route.js",
   "/api/barang/route": "app/api/barang/route.js",
   "/api/supplier/route": "app/api/supplier/route.js",
-  "/login/page": "app/login/page.js",
+  "/api/auth/[...nextauth]/route": "app/api/auth/[...nextauth]/route.js",
   "/api/pengadaan/route": "app/api/pengadaan/route.js",
-  "/api/register/route": "app/api/register/route.js",
-  "/api/kategori/route": "app/api/kategori/route.js",
-  "/register/page": "app/register/page.js",
-  "/api/pelanggan/route": "app/api/pelanggan/route.js",
-  "/api/penjualan/route": "app/api/penjualan/route.js",
-  "/(app)/dashboard/page": "app/(app)/dashboard/page.js",
-  "/(app)/pengadaan/page": "app/(app)/pengadaan/page.js",
-  "/(app)/master-barang/page": "app/(app)/master-barang/page.js",
-  "/(app)/users/page": "app/(app)/users/page.js",
-  "/(app)/penjualan/page": "app/(app)/penjualan/page.js",
-  "/(app)/penjualan/print/page": "app/(app)/penjualan/print/page.js"
+  "/(app)/pengadaan/page": "app/(app)/pengadaan/page.js"
 }

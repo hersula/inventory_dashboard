@@ -7,89 +7,73 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum Role {
-  ADMIN
-  MANAGER
-  STAFF
-}
-
-// ---------------------------------------------------------------
-// MULTI-TENANT: setiap Company (perusahaan) adalah satu "tenant".
-// Semua data operasional (barang, transaksi, akuntansi, user) selalu
-// terikat ke satu companyId, dan setiap query di API WAJIB difilter
-// dengan companyId milik user yang sedang login (lihat src/lib/apiAuth.ts).
-// Pendaftaran perusahaan baru: lihat src/app/api/register/route.ts.
-// ---------------------------------------------------------------
 model Company {
-  id        Int      @id @default(autoincrement())
-  nama      String
-  slug      String   @unique
-  email     String?
-  telepon   String?
-  alamat    String?
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-
-  users         User[]
-  kategori      Kategori[]
-  supplier      Supplier[]
-  pelanggan     Pelanggan[]
+  id            Int           @id @default(autoincrement())
+  nama          String
+  slug          String        @unique
+  email         String?
+  telepon       String?
+  alamat        String?
+  isActive      Boolean       @default(true)
+  createdAt     DateTime      @default(now())
+  akun          Akun[]
   barang        Barang[]
+  jurnalEntries JurnalEntry[]
+  kategori      Kategori[]
+  pelanggan     Pelanggan[]
   pengadaan     Pengadaan[]
   penjualan     Penjualan[]
-  akun          Akun[]
-  jurnalEntries JurnalEntry[]
-  pembayaran    Pembayaran[]
+  supplier      Supplier[]
+  users         User[]
 }
 
 model User {
   id            Int           @id @default(autoincrement())
-  companyId     Int
-  company       Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
   name          String
   email         String        @unique
   password      String
   role          Role          @default(STAFF)
   active        Boolean       @default(true)
   createdAt     DateTime      @default(now())
+  companyId     Int
+  jurnalEntries JurnalEntry[]
   pengadaan     Pengadaan[]
   penjualan     Penjualan[]
-  jurnalEntries JurnalEntry[]
-  pembayaran    Pembayaran[]
+  company       Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@index([companyId])
 }
 
 model Kategori {
   id        Int      @id @default(autoincrement())
-  companyId Int
-  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
   nama      String
+  companyId Int
   barang    Barang[]
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@unique([companyId, nama])
 }
 
 model Supplier {
   id        Int         @id @default(autoincrement())
-  companyId Int
-  company   Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
   nama      String
   alamat    String?
   telepon   String?
   email     String?
+  companyId Int
   pengadaan Pengadaan[]
+  company   Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@index([companyId])
 }
 
 model Pelanggan {
   id        Int         @id @default(autoincrement())
-  companyId Int
-  company   Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
   nama      String
   alamat    String?
   telepon   String?
+  companyId Int
+  company   Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
   penjualan Penjualan[]
 
   @@index([companyId])
@@ -97,12 +81,9 @@ model Pelanggan {
 
 model Barang {
   id              Int               @id @default(autoincrement())
-  companyId       Int
-  company         Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
   kode            String
   nama            String
   kategoriId      Int?
-  kategori        Kategori?         @relation(fields: [kategoriId], references: [id])
   satuan          String            @default("pcs")
   hargaBeli       Decimal           @db.Decimal(15, 2)
   hargaJual       Decimal           @db.Decimal(15, 2)
@@ -111,6 +92,9 @@ model Barang {
   deskripsi       String?           @db.Text
   createdAt       DateTime          @default(now())
   updatedAt       DateTime          @updatedAt
+  companyId       Int
+  company         Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  kategori        Kategori?         @relation(fields: [kategoriId], references: [id])
   pengadaanDetail PengadaanDetail[]
   penjualanDetail PenjualanDetail[]
 
@@ -118,38 +102,24 @@ model Barang {
   @@index([kategoriId])
 }
 
-// Metode pembayaran transaksi. TUNAI & TRANSFER dianggap "lunas di muka"
-// (langsung mengurangi/menambah Kas atau Bank). KREDIT & TEMPO dianggap
-// "belum lunas" (membentuk Hutang Usaha untuk Pengadaan, atau Piutang Usaha
-// untuk Penjualan) — dilunasi belakangan lewat modul Pembayaran Hutang/Piutang.
-enum MetodeBayar {
-  TUNAI
-  TRANSFER
-  KREDIT
-  TEMPO
-}
-
 model Pengadaan {
   id            Int               @id @default(autoincrement())
-  companyId     Int
-  company       Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
   nomor         String
   tanggal       DateTime          @default(now())
   supplierId    Int?
-  supplier      Supplier?         @relation(fields: [supplierId], references: [id])
   userId        Int
-  user          User              @relation(fields: [userId], references: [id])
   status        String            @default("SELESAI")
   catatan       String?
-  metodeBayar   MetodeBayar       @default(TUNAI)
-  // subtotal = jumlah (qty x harga satuan) seluruh item, sebelum diskon/PPN.
-  subtotal      Decimal           @db.Decimal(15, 2) @default(0)
-  diskonPersen  Decimal           @db.Decimal(5, 2)  @default(0)
-  diskonNominal Decimal           @db.Decimal(15, 2) @default(0)
-  ppn           Decimal           @db.Decimal(15, 2) @default(0)
-  // total = subtotal - diskonNominal + ppn (grand total, jumlah yang dibayar).
-  total         Decimal           @db.Decimal(15, 2) @default(0)
+  total         Decimal           @default(0.00) @db.Decimal(15, 2)
   createdAt     DateTime          @default(now())
+  companyId     Int
+  diskonNominal Decimal           @default(0.00) @db.Decimal(15, 2)
+  diskonPersen  Decimal           @default(0.00) @db.Decimal(5, 2)
+  ppn           Decimal           @default(0.00) @db.Decimal(15, 2)
+  subtotal      Decimal           @default(0.00) @db.Decimal(15, 2)
+  company       Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  supplier      Supplier?         @relation(fields: [supplierId], references: [id])
+  user          User              @relation(fields: [userId], references: [id])
   detail        PengadaanDetail[]
 
   @@unique([companyId, nomor])
@@ -160,12 +130,12 @@ model Pengadaan {
 model PengadaanDetail {
   id          Int       @id @default(autoincrement())
   pengadaanId Int
-  pengadaan   Pengadaan @relation(fields: [pengadaanId], references: [id], onDelete: Cascade)
   barangId    Int
-  barang      Barang    @relation(fields: [barangId], references: [id])
   qty         Int
   hargaSatuan Decimal   @db.Decimal(15, 2)
   subtotal    Decimal   @db.Decimal(15, 2)
+  barang      Barang    @relation(fields: [barangId], references: [id])
+  pengadaan   Pengadaan @relation(fields: [pengadaanId], references: [id], onDelete: Cascade)
 
   @@index([pengadaanId])
   @@index([barangId])
@@ -173,25 +143,22 @@ model PengadaanDetail {
 
 model Penjualan {
   id            Int               @id @default(autoincrement())
-  companyId     Int
-  company       Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
   nomor         String
   tanggal       DateTime          @default(now())
   pelangganId   Int?
-  pelanggan     Pelanggan?        @relation(fields: [pelangganId], references: [id])
   userId        Int
-  user          User              @relation(fields: [userId], references: [id])
   status        String            @default("SELESAI")
   catatan       String?
-  metodeBayar   MetodeBayar       @default(TUNAI)
-  // subtotal = jumlah (qty x harga satuan) seluruh item, sebelum diskon/PPN.
-  subtotal      Decimal           @db.Decimal(15, 2) @default(0)
-  diskonPersen  Decimal           @db.Decimal(5, 2)  @default(0)
-  diskonNominal Decimal           @db.Decimal(15, 2) @default(0)
-  ppn           Decimal           @db.Decimal(15, 2) @default(0)
-  // total = subtotal - diskonNominal + ppn (grand total, jumlah yang dibayar pelanggan).
-  total         Decimal           @db.Decimal(15, 2) @default(0)
+  total         Decimal           @default(0.00) @db.Decimal(15, 2)
   createdAt     DateTime          @default(now())
+  companyId     Int
+  diskonNominal Decimal           @default(0.00) @db.Decimal(15, 2)
+  diskonPersen  Decimal           @default(0.00) @db.Decimal(5, 2)
+  ppn           Decimal           @default(0.00) @db.Decimal(15, 2)
+  subtotal      Decimal           @default(0.00) @db.Decimal(15, 2)
+  company       Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  pelanggan     Pelanggan?        @relation(fields: [pelangganId], references: [id])
+  user          User              @relation(fields: [userId], references: [id])
   detail        PenjualanDetail[]
 
   @@unique([companyId, nomor])
@@ -202,26 +169,72 @@ model Penjualan {
 model PenjualanDetail {
   id          Int       @id @default(autoincrement())
   penjualanId Int
-  penjualan   Penjualan @relation(fields: [penjualanId], references: [id], onDelete: Cascade)
   barangId    Int
-  barang      Barang    @relation(fields: [barangId], references: [id])
   qty         Int
   hargaSatuan Decimal   @db.Decimal(15, 2)
   subtotal    Decimal   @db.Decimal(15, 2)
+  barang      Barang    @relation(fields: [barangId], references: [id])
+  penjualan   Penjualan @relation(fields: [penjualanId], references: [id], onDelete: Cascade)
 
   @@index([penjualanId])
   @@index([barangId])
 }
 
-// ---------------------------------------------------------------
-// MODUL AKUNTANSI
-// Chart of Account (Akun) + Jurnal Umum (double-entry bookkeeping).
-// Setiap transaksi Pengadaan & Penjualan otomatis membuat 1 JurnalEntry
-// (lihat src/lib/akuntansi.ts) sehingga posisi keuangan selalu sinkron
-// dengan transaksi operasional, tanpa input manual berulang.
-// Semua data akuntansi juga terikat companyId (lihat catatan multi-tenant
-// di atas model Company).
-// ---------------------------------------------------------------
+model Akun {
+  id           Int            @id @default(autoincrement())
+  kode         String
+  nama         String
+  tipe         TipeAkun
+  saldoNormal  SaldoNormal
+  isActive     Boolean        @default(true)
+  createdAt    DateTime       @default(now())
+  companyId    Int
+  company      Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  jurnalDetail JurnalDetail[]
+
+  @@unique([companyId, kode])
+  @@index([tipe])
+}
+
+model JurnalEntry {
+  id            Int            @id @default(autoincrement())
+  nomor         String
+  tanggal       DateTime       @default(now())
+  keterangan    String?
+  referensiTipe String         @default("manual")
+  referensiId   Int?
+  userId        Int
+  createdAt     DateTime       @default(now())
+  companyId     Int
+  detail        JurnalDetail[]
+  company       Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user          User           @relation(fields: [userId], references: [id])
+
+  @@unique([companyId, nomor])
+  @@index([tanggal])
+  @@index([referensiTipe, referensiId])
+  @@index([userId], map: "JurnalEntry_userId_fkey")
+}
+
+model JurnalDetail {
+  id            Int         @id @default(autoincrement())
+  jurnalEntryId Int
+  akunId        Int
+  debit         Decimal     @default(0.00) @db.Decimal(15, 2)
+  kredit        Decimal     @default(0.00) @db.Decimal(15, 2)
+  keterangan    String?
+  akun          Akun        @relation(fields: [akunId], references: [id])
+  jurnalEntry   JurnalEntry @relation(fields: [jurnalEntryId], references: [id], onDelete: Cascade)
+
+  @@index([jurnalEntryId])
+  @@index([akunId])
+}
+
+enum Role {
+  ADMIN
+  MANAGER
+  STAFF
+}
 
 enum TipeAkun {
   ASET
@@ -234,101 +247,4 @@ enum TipeAkun {
 enum SaldoNormal {
   DEBIT
   KREDIT
-}
-
-model Akun {
-  id           Int            @id @default(autoincrement())
-  companyId    Int
-  company      Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  kode         String
-  nama         String
-  tipe         TipeAkun
-  saldoNormal  SaldoNormal
-  isActive     Boolean        @default(true)
-  createdAt    DateTime       @default(now())
-  jurnalDetail JurnalDetail[]
-
-  @@unique([companyId, kode])
-  @@index([tipe])
-}
-
-model JurnalEntry {
-  id            Int            @id @default(autoincrement())
-  companyId     Int
-  company       Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  nomor         String
-  tanggal       DateTime       @default(now())
-  keterangan    String?
-  // referensiTipe: "pengadaan" | "penjualan" | "manual" — dipakai untuk
-  // melacak & membalik jurnal otomatis saat transaksi sumbernya diedit/dibatalkan.
-  referensiTipe String         @default("manual")
-  referensiId   Int?
-  userId        Int
-  user          User           @relation(fields: [userId], references: [id])
-  detail        JurnalDetail[]
-  createdAt     DateTime       @default(now())
-
-  @@unique([companyId, nomor])
-  @@index([tanggal])
-  @@index([referensiTipe, referensiId])
-}
-
-model JurnalDetail {
-  id            Int         @id @default(autoincrement())
-  jurnalEntryId Int
-  jurnalEntry   JurnalEntry @relation(fields: [jurnalEntryId], references: [id], onDelete: Cascade)
-  akunId        Int
-  akun          Akun        @relation(fields: [akunId], references: [id])
-  debit         Decimal     @default(0) @db.Decimal(15, 2)
-  kredit        Decimal     @default(0) @db.Decimal(15, 2)
-  keterangan    String?
-
-  @@index([jurnalEntryId])
-  @@index([akunId])
-}
-
-// ---------------------------------------------------------------
-// PEMBAYARAN HUTANG & PIUTANG
-// Dipakai untuk melunasi (sebagian/seluruhnya) transaksi Pengadaan/Penjualan
-// yang metode bayarnya KREDIT/TEMPO (lihat enum MetodeBayar). Setiap
-// pembayaran otomatis memposting jurnal (lihat src/lib/akuntansi.ts):
-//   - HUTANG (bayar ke supplier): Debit Hutang Usaha / Kredit Kas atau Bank
-//   - PIUTANG (terima dari pelanggan): Debit Kas atau Bank / Kredit Piutang Usaha
-// Sisa hutang/piutang per transaksi dihitung dinamis (total transaksi -
-// jumlah seluruh Pembayaran yang referensiId-nya sama), bukan disimpan
-// sebagai kolom terpisah, supaya tidak ada risiko data tidak sinkron.
-// ---------------------------------------------------------------
-
-enum TipePembayaran {
-  HUTANG
-  PIUTANG
-}
-
-// Pelunasan hutang/piutang hanya lewat kas/bank (tidak ada lagi termin
-// berjenjang di tahap ini) — cukup untuk mencatat kapan & berapa dibayar.
-enum MetodeBayarPelunasan {
-  TUNAI
-  TRANSFER
-}
-
-model Pembayaran {
-  id            Int                   @id @default(autoincrement())
-  companyId     Int
-  company       Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  nomor         String
-  tanggal       DateTime              @default(now())
-  tipe          TipePembayaran
-  // referensiTipe: "pengadaan" | "penjualan"
-  referensiTipe String
-  referensiId   Int
-  jumlah        Decimal               @db.Decimal(15, 2)
-  metodeBayar   MetodeBayarPelunasan  @default(TUNAI)
-  keterangan    String?
-  userId        Int
-  user          User                  @relation(fields: [userId], references: [id])
-  createdAt     DateTime              @default(now())
-
-  @@unique([companyId, nomor])
-  @@index([referensiTipe, referensiId])
-  @@index([companyId])
 }
