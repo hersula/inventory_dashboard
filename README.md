@@ -121,6 +121,12 @@ Buka [http://localhost:3000](http://localhost:3000) — Anda akan diarahkan ke h
 
 > **Catatan untuk instalasi yang sudah berjalan sebelum fitur metode pembayaran & Hutang/Piutang ditambahkan:** migrasi ini menambahkan kolom `metodeBayar` ke `Pengadaan`/`Penjualan` (default `TUNAI`, aman untuk data lama — transaksi lama otomatis dianggap tunai/lunas) dan tabel baru `Pembayaran`. Tambahkan juga akun **Bank** (`1105`, Aset) secara manual di Chart of Akun untuk perusahaan yang sudah terdaftar, supaya jurnal transaksi bermetode Transfer Bank bisa terposting.
 
+> **Troubleshooting: error TypeScript "Object literal may only specify known properties" / field seperti `metodeBayar` dianggap tidak ada.** Ini terjadi kalau `schema.prisma` sudah diupdate tapi Prisma Client (kode TypeScript hasil generate di `node_modules/@prisma/client`) belum ikut di-generate ulang, jadi tipenya masih versi lama. Jalankan:
+> ```bash
+> npx prisma generate
+> ```
+> lalu build/jalankan lagi. `package.json` sekarang juga sudah punya script `postinstall` yang otomatis menjalankan `prisma generate` setiap kali `npm install`, supaya hal ini tidak terulang di update berikutnya. Setelah mengubah `schema.prisma` secara manual (tanpa lewat `prisma migrate dev`, yang otomatis generate ulang), selalu jalankan `npx prisma generate` secara manual.
+
 ### Build untuk produksi
 
 ```bash
