@@ -89,7 +89,12 @@ export async function POST(req: NextRequest) {
       referensiTipe: "manual",
       referensiId: null,
       userId: Number(session!.user.id),
-      lines,
+      lines: lines.map((l) => ({
+        akunId: l.akunId,
+        debit: l.debit,
+        kredit: l.kredit,
+        keterangan: l.keterangan ?? undefined,
+      })),
     });
     return NextResponse.json(result, { status: 201 });
   } catch (err: any) {
