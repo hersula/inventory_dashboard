@@ -121,6 +121,7 @@ model Pengadaan {
   supplier      Supplier?         @relation(fields: [supplierId], references: [id])
   user          User              @relation(fields: [userId], references: [id])
   detail        PengadaanDetail[]
+  metodeBayar   MetodeBayar?      @default(TEMPO)
 
   @@unique([companyId, nomor])
   @@index([supplierId])
