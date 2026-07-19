@@ -16,7 +16,9 @@ export type Permission =
   | "penjualan.manage"
   | "akuntansi.view"
   | "akuntansi.manage"
-  | "users.manage";
+  | "users.manage"
+  | "retur.view"
+  | "retur.manage";
 
 const rolePermissions: Record<Role, Permission[]> = {
   ADMIN: [

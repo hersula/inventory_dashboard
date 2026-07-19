@@ -1,7 +1,10 @@
 {
-  "/api/barang/route": "app/api/barang/route.js",
-  "/api/supplier/route": "app/api/supplier/route.js",
   "/api/auth/[...nextauth]/route": "app/api/auth/[...nextauth]/route.js",
-  "/api/pengadaan/route": "app/api/pengadaan/route.js",
-  "/(app)/pengadaan/page": "app/(app)/pengadaan/page.js"
+  "/api/jurnal/route": "app/api/jurnal/route.js",
+  "/login/page": "app/login/page.js",
+  "/(app)/dashboard/page": "app/(app)/dashboard/page.js",
+  "/(app)/master-barang/page": "app/(app)/master-barang/page.js",
+  "/(app)/pengadaan/page": "app/(app)/pengadaan/page.js",
+  "/(app)/penjualan/page": "app/(app)/penjualan/page.js",
+  "/(app)/akuntansi/jurnal/page": "app/(app)/akuntansi/jurnal/page.js"
 }

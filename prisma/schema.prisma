@@ -40,6 +40,7 @@ model Company {
   akun          Akun[]
   jurnalEntries JurnalEntry[]
   pembayaran    Pembayaran[]
+  retur         Retur[]
 }
 
 model User {
@@ -113,6 +114,7 @@ model Barang {
   updatedAt       DateTime          @updatedAt
   pengadaanDetail PengadaanDetail[]
   penjualanDetail PenjualanDetail[]
+  detailRetur     DetailRetur[]
 
   @@unique([companyId, kode])
   @@index([kategoriId])
@@ -143,12 +145,12 @@ model Pengadaan {
   catatan       String?
   metodeBayar   MetodeBayar       @default(TUNAI)
   // subtotal = jumlah (qty x harga satuan) seluruh item, sebelum diskon/PPN.
-  subtotal      Decimal           @db.Decimal(15, 2) @default(0)
-  diskonPersen  Decimal           @db.Decimal(5, 2)  @default(0)
-  diskonNominal Decimal           @db.Decimal(15, 2) @default(0)
-  ppn           Decimal           @db.Decimal(15, 2) @default(0)
+  subtotal      Decimal           @default(0) @db.Decimal(15, 2)
+  diskonPersen  Decimal           @default(0) @db.Decimal(5, 2)
+  diskonNominal Decimal           @default(0) @db.Decimal(15, 2)
+  ppn           Decimal           @default(0) @db.Decimal(15, 2)
   // total = subtotal - diskonNominal + ppn (grand total, jumlah yang dibayar).
-  total         Decimal           @db.Decimal(15, 2) @default(0)
+  total         Decimal           @default(0) @db.Decimal(15, 2)
   createdAt     DateTime          @default(now())
   detail        PengadaanDetail[]
 
@@ -185,12 +187,12 @@ model Penjualan {
   catatan       String?
   metodeBayar   MetodeBayar       @default(TUNAI)
   // subtotal = jumlah (qty x harga satuan) seluruh item, sebelum diskon/PPN.
-  subtotal      Decimal           @db.Decimal(15, 2) @default(0)
-  diskonPersen  Decimal           @db.Decimal(5, 2)  @default(0)
-  diskonNominal Decimal           @db.Decimal(15, 2) @default(0)
-  ppn           Decimal           @db.Decimal(15, 2) @default(0)
+  subtotal      Decimal           @default(0) @db.Decimal(15, 2)
+  diskonPersen  Decimal           @default(0) @db.Decimal(5, 2)
+  diskonNominal Decimal           @default(0) @db.Decimal(15, 2)
+  ppn           Decimal           @default(0) @db.Decimal(15, 2)
   // total = subtotal - diskonNominal + ppn (grand total, jumlah yang dibayar pelanggan).
-  total         Decimal           @db.Decimal(15, 2) @default(0)
+  total         Decimal           @default(0) @db.Decimal(15, 2)
   createdAt     DateTime          @default(now())
   detail        PenjualanDetail[]
 
@@ -312,23 +314,55 @@ enum MetodeBayarPelunasan {
 }
 
 model Pembayaran {
-  id            Int                   @id @default(autoincrement())
+  id            Int                  @id @default(autoincrement())
   companyId     Int
-  company       Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  company       Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
   nomor         String
-  tanggal       DateTime              @default(now())
+  tanggal       DateTime             @default(now())
   tipe          TipePembayaran
   // referensiTipe: "pengadaan" | "penjualan"
   referensiTipe String
   referensiId   Int
-  jumlah        Decimal               @db.Decimal(15, 2)
-  metodeBayar   MetodeBayarPelunasan  @default(TUNAI)
+  jumlah        Decimal              @db.Decimal(15, 2)
+  metodeBayar   MetodeBayarPelunasan @default(TUNAI)
   keterangan    String?
   userId        Int
-  user          User                  @relation(fields: [userId], references: [id])
-  createdAt     DateTime              @default(now())
+  user          User                 @relation(fields: [userId], references: [id])
+  createdAt     DateTime             @default(now())
 
   @@unique([companyId, nomor])
   @@index([referensiTipe, referensiId])
   @@index([companyId])
+}
+
+model Retur {
+  id         Int      @id @default(autoincrement())
+  nomorRetur String   @unique
+  tanggal    DateTime @default(now())
+  jenis      String // "pembelian" atau "penjualan"
+  total      Decimal  @default(0)
+  status     String   @default("draft")
+
+  // Relasi ke Company (penting!)
+  companyId Int
+  company   Company @relation(fields: [companyId], references: [id])
+
+  // Relasi ke detail retur (opsional)
+  detailRetur DetailRetur[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model DetailRetur {
+  id       Int     @id @default(autoincrement())
+  returId  Int
+  barangId Int // sesuaikan dengan Barang
+  jumlah   Int
+  harga    Decimal @db.Decimal(15, 2) // sesuaikan format decimal dengan Barang
+
+  retur  Retur  @relation(fields: [returId], references: [id])
+  barang Barang @relation(fields: [barangId], references: [id]) // ganti ke Barang
+
+  @@unique([returId, barangId])
 }
