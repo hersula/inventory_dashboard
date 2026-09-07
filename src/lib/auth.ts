@@ -18,13 +18,29 @@ export const authOptions: NextAuthOptions = {
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) return null;
 
+        // Super Admin dicek lebih dulu dari tabel terpisah (bukan User), karena
+        // levelnya di atas Company/tenant manapun. Lihat model SuperAdmin di schema.
+        const superAdmin = await prisma.superAdmin.findUnique({ where: { email: credentials.email } });
+        if (superAdmin) {
+          const validSuper = await bcrypt.compare(credentials.password, superAdmin.password);
+          if (!validSuper) return null;
+          return {
+            id: String(superAdmin.id),
+            name: superAdmin.name,
+            email: superAdmin.email,
+            role: "SUPERADMIN",
+            companyId: "",
+            companyName: "Super Admin",
+          };
+        }
+
         const user = await prisma.user.findUnique({
           where: { email: credentials.email },
           include: { company: true },
         });
         if (!user || !user.active) return null;
-        // Perusahaan dinonaktifkan (mis. langganan berhenti) -> tolak login.
-        if (!user.company || !user.company.isActive) return null;
+        // Perusahaan belum disetujui/ditolak/ditangguhkan Super Admin -> tolak login.
+        if (!user.company || user.company.status !== "ACTIVE") return null;
 
         const valid = await bcrypt.compare(credentials.password, user.password);
         if (!valid) return null;

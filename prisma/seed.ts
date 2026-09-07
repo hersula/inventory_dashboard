@@ -8,12 +8,42 @@ const prisma = new PrismaClient();
 async function main() {
   const password = await bcrypt.hash("password123", 10);
 
-  // MULTI-TENANT: seed ini membuat SATU perusahaan contoh ("Toko Demo").
+  // Akun Super Admin platform — di luar Company manapun, dipakai untuk login
+  // ke /superadmin (persetujuan pendaftaran & pengaturan paket langganan).
+  await prisma.superAdmin.upsert({
+    where: { email: "superadmin@platform.com" },
+    update: {},
+    create: { name: "Super Admin", email: "superadmin@platform.com", password },
+  });
+
+  // Paket langganan default yang bisa dipasangkan Super Admin ke Company
+  // saat menyetujui pendaftaran (lihat src/app/superadmin/paket).
+  const planData = [
+    { nama: "Free", slug: "free", harga: 0, billingCycle: "MONTHLY" as const, maxUser: 3, maxBarang: 50, deskripsi: "Cocok untuk mencoba aplikasi — dibatasi 3 user & 50 jenis barang." },
+    { nama: "Basic", slug: "basic", harga: 150000, billingCycle: "MONTHLY" as const, maxUser: 10, maxBarang: 500, deskripsi: "Untuk usaha kecil-menengah — 10 user & 500 jenis barang." },
+    { nama: "Pro", slug: "pro", harga: 400000, billingCycle: "MONTHLY" as const, maxUser: null, maxBarang: null, deskripsi: "Tanpa batas user & barang, cocok untuk usaha yang berkembang." },
+  ];
+  for (const p of planData) {
+    await prisma.subscriptionPlan.upsert({ where: { slug: p.slug }, update: {}, create: p });
+  }
+  const planPro = await prisma.subscriptionPlan.findUnique({ where: { slug: "pro" } });
+
+  // MULTI-TENANT: seed ini membuat SATU perusahaan contoh ("Toko Demo"),
+  // langsung berstatus ACTIVE (sudah "disetujui") dengan paket Pro terpasang,
+  // supaya bisa langsung dipakai tanpa perlu approval manual lewat /superadmin.
   // Semua data di bawah (user, barang, transaksi, akun) terikat ke company ini.
   const company = await prisma.company.upsert({
     where: { slug: "toko-demo" },
     update: {},
-    create: { nama: "Toko Demo", slug: "toko-demo", email: "admin@toko.com" },
+    create: {
+      nama: "Toko Demo",
+      slug: "toko-demo",
+      email: "admin@toko.com",
+      status: "ACTIVE",
+      approvedAt: new Date(),
+      planId: planPro?.id,
+      subscriptionStatus: "ACTIVE",
+    },
   });
 
   await prisma.user.createMany({
@@ -278,6 +308,7 @@ async function main() {
   console.log("  admin@toko.com   / password123 (ADMIN)");
   console.log("  manager@toko.com / password123 (MANAGER)");
   console.log("  staff@toko.com   / password123 (STAFF)");
+  console.log("  superadmin@platform.com / password123 (SUPER ADMIN, login di /login lalu diarahkan ke /superadmin)");
 }
 
 main()

@@ -1,8 +1,16 @@
 {
-  "/api/mobile/me/route": "app/api/mobile/me/route.js",
+  "/login/page": "app/login/page.js",
+  "/api/auth/[...nextauth]/route": "app/api/auth/[...nextauth]/route.js",
   "/api/dashboard/stats/route": "app/api/dashboard/stats/route.js",
-  "/api/kategori/route": "app/api/kategori/route.js",
-  "/api/akun/route": "app/api/akun/route.js",
-  "/api/barang/route": "app/api/barang/route.js",
-  "/api/pengadaan/route": "app/api/pengadaan/route.js"
+  "/api/superadmin/overview/route": "app/api/superadmin/overview/route.js",
+  "/api/superadmin/companies/route": "app/api/superadmin/companies/route.js",
+  "/api/superadmin/plans/route": "app/api/superadmin/plans/route.js",
+  "/api/superadmin/companies/[id]/route": "app/api/superadmin/companies/[id]/route.js",
+  "/api/users/route": "app/api/users/route.js",
+  "/(app)/dashboard/page": "app/(app)/dashboard/page.js",
+  "/(app)/users/page": "app/(app)/users/page.js",
+  "/superadmin/page": "app/superadmin/page.js",
+  "/superadmin/pendaftaran/page": "app/superadmin/pendaftaran/page.js",
+  "/superadmin/perusahaan/page": "app/superadmin/perusahaan/page.js",
+  "/superadmin/paket/page": "app/superadmin/paket/page.js"
 }

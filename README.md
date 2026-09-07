@@ -7,17 +7,27 @@ Aplikasi dashboard manajemen **barang, pengadaan, dan penjualan** berbasis **Nex
 Aplikasi ini bersifat **multi-tenant** — satu deployment bisa melayani banyak perusahaan (`Company`) sekaligus, dan setiap perusahaan hanya bisa melihat & mengelola datanya sendiri.
 
 - **Pendaftaran mandiri** — buka `/register` untuk mendaftarkan perusahaan baru. Cukup isi nama perusahaan, nama & email admin, dan password. Sistem otomatis membuat:
-  1. Data **Company** baru (dengan slug unik dari nama perusahaan),
+  1. Data **Company** baru berstatus **PENDING** (dengan slug unik dari nama perusahaan),
   2. User pertama dengan role **ADMIN** untuk perusahaan tersebut,
   3. **Chart of Akun default** (lihat `src/lib/defaultAkun.ts`) supaya modul Akuntansi langsung siap pakai.
-  
-  Setelah daftar, otomatis login dan masuk ke Dashboard.
+
+  Perusahaan baru **belum bisa login** sampai disetujui oleh **Super Admin** — lihat bagian [Super Admin](#super-admin-approval-pendaftaran--paket-langganan) di bawah.
 
 - **Isolasi data** — setiap tabel data (barang, kategori, supplier, pelanggan, pengadaan, penjualan, akun, jurnal, user) punya kolom `companyId`. Setiap query di API **wajib** difilter dengan `companyId` milik user yang sedang login (lihat helper `getCompanyId()` di `src/lib/apiAuth.ts`, dipakai di awal hampir semua route handler). Mengakses/mengubah data milik perusahaan lain — walau tahu ID datanya — akan selalu direspons `404 Not Found`, bukan `403`, supaya tidak membocorkan informasi bahwa data itu ada.
 - **Kode unik per perusahaan, bukan global** — kode barang, kode akun, dan nomor transaksi hanya perlu unik *dalam satu perusahaan*. Dua perusahaan berbeda boleh sama-sama punya barang dengan kode `BRG-001`.
 - **Email tetap unik secara global** — satu alamat email hanya bisa terdaftar di satu perusahaan (dipakai untuk login tanpa perlu memilih perusahaan lebih dulu).
 - **Manajemen User per perusahaan** — Administrator hanya bisa melihat, menambah, mengedit, dan menghapus user **di perusahaannya sendiri**. Ia tidak akan pernah melihat user dari perusahaan lain, sekalipun lewat API langsung.
-- **Nonaktifkan perusahaan** — kolom `Company.isActive` bisa dipakai untuk menangguhkan akses seluruh user suatu perusahaan (mis. langganan berakhir) tanpa menghapus datanya; login akan ditolak selama `isActive = false`.
+- **Status perusahaan** — kolom `Company.status` (`PENDING` / `ACTIVE` / `REJECTED` / `SUSPENDED`) dikontrol Super Admin dan menentukan boleh-tidaknya seluruh user perusahaan tersebut login; lihat bagian Super Admin di bawah.
+
+## Super Admin: Approval Pendaftaran & Paket Langganan
+
+Di atas seluruh perusahaan (tenant), ada satu peran **Super Admin** — akun platform yang berdiri sendiri (tabel `SuperAdmin`, bukan `User`, jadi tidak terikat `companyId`/role `ADMIN`/`MANAGER`/`STAFF` manapun).
+
+- **Login** — pakai halaman `/login` yang sama seperti user biasa (autentikasi di `src/lib/auth.ts` mengecek tabel `SuperAdmin` lebih dulu sebelum tabel `User`). Setelah login, otomatis diarahkan ke `/superadmin` alih-alih `/dashboard`. Akun default dibuat lewat `npm run prisma:seed`: `superadmin@platform.com` / `password123` — **ganti password ini sebelum deploy ke produksi.**
+- **Approval Pendaftaran** (`/superadmin/pendaftaran`) — daftar seluruh perusahaan berstatus `PENDING`. Super Admin bisa **Setujui** (opsional langsung pasangkan paket langganan, status berubah jadi `ACTIVE` dan seluruh usernya langsung bisa login) atau **Tolak** (wajib isi alasan, status jadi `REJECTED`).
+- **Perusahaan & Langganan** (`/superadmin/perusahaan`) — daftar semua perusahaan (bisa difilter per status). Dari sini Super Admin bisa **menangguhkan** (`SUSPENDED`, memblokir login seluruh usernya — mis. langganan menunggak) atau **mengaktifkan kembali**, serta mengatur/mengganti **paket langganan** dan tanggal berlakunya (`subscriptionEndsAt`).
+- **Paket Langganan** (`/superadmin/paket`) — CRUD paket (nama, harga, siklus tagihan bulanan/tahunan, batas maksimum user & jenis barang, aktif/nonaktif). Paket **Free** hanyalah salah satu baris di tabel ini (harga `0`) — tidak ada logika khusus, cukup diatur seperti paket berbayar lainnya. Batas `maxUser`/`maxBarang` **ditegakkan otomatis**: begitu jumlah user/jenis barang sebuah perusahaan mencapai batas paketnya, endpoint tambah User (`POST /api/users`) dan tambah Barang (`POST /api/barang`) akan menolak dengan pesan untuk upgrade paket (lihat `src/lib/subscriptionLimits.ts`). Paket dengan batas kosong (null) berarti tanpa batas; perusahaan tanpa paket sama sekali juga dianggap tanpa batas (masa percobaan).
+- **Proteksi rute** — middleware (`src/middleware.ts`) memisahkan dua "dunia" sesi: role `SUPERADMIN` hanya bisa mengakses `/superadmin/*` (otomatis dialihkan ke sana jika mencoba membuka `/dashboard` dkk.), sedangkan user perusahaan biasa tidak bisa membuka `/superadmin/*` sama sekali (dialihkan ke `/dashboard`).
 
 ## Modul
 
@@ -119,6 +129,8 @@ Buka [http://localhost:3000](http://localhost:3000) — Anda akan diarahkan ke h
 
 > **Catatan untuk instalasi yang sudah berjalan sebelum fitur diskon & PPN ditambahkan:** migrasi ini menambahkan kolom `subtotal`, `diskonPersen`, `diskonNominal`, `ppn` ke tabel `Pengadaan`/`Penjualan` — semuanya punya nilai default `0` sehingga migrasi aman untuk data lama (tidak perlu isi manual). Yang perlu dilakukan manual: tambahkan 2 akun baru — **PPN Masukan** (`1104`, Aset) dan **PPN Keluaran** (`2102`, Kewajiban) — di modul Akuntansi > Chart of Akun untuk setiap perusahaan yang sudah terdaftar, supaya jurnal otomatis PPN bisa ikut terposting pada transaksi baru.
 
+> **Catatan untuk instalasi yang sudah berjalan sebelum fitur Super Admin (approval pendaftaran & paket langganan) ditambahkan:** migrasi ini menghapus kolom `Company.isActive` (boolean) dan menggantinya dengan `Company.status` (enum `PENDING`/`ACTIVE`/`REJECTED`/`SUSPENDED`), serta menambah tabel `SuperAdmin` dan `SubscriptionPlan`. Setelah `npx prisma migrate dev`, **update manual seluruh baris `Company` lama menjadi `status = 'ACTIVE'`** (mis. lewat Prisma Studio atau `UPDATE Company SET status = 'ACTIVE'`) — kalau tidak, semua perusahaan lama dianggap `PENDING` dan seluruh usernya tidak bisa login sampai disetujui lewat `/superadmin/pendaftaran`. Buat juga akun Super Admin pertama (jalankan `npm run prisma:seed`, atau insert manual ke tabel `SuperAdmin` dengan password yang sudah di-hash bcrypt) supaya ada yang bisa login ke `/superadmin`.
+
 > **Catatan untuk instalasi yang sudah berjalan sebelum fitur metode pembayaran & Hutang/Piutang ditambahkan:** migrasi ini menambahkan kolom `metodeBayar` ke `Pengadaan`/`Penjualan` (default `TUNAI`, aman untuk data lama — transaksi lama otomatis dianggap tunai/lunas) dan tabel baru `Pembayaran`. Tambahkan juga akun **Bank** (`1105`, Aset) secara manual di Chart of Akun untuk perusahaan yang sudah terdaftar, supaya jurnal transaksi bermetode Transfer Bank bisa terposting.
 
 > **Troubleshooting: error TypeScript "Object literal may only specify known properties" / field seperti `metodeBayar` dianggap tidak ada.** Ini terjadi kalau `schema.prisma` sudah diupdate tapi Prisma Client (kode TypeScript hasil generate di `node_modules/@prisma/client`) belum ikut di-generate ulang, jadi tipenya masih versi lama. Jalankan:
@@ -153,6 +165,12 @@ src/
       penjualan/          # + [id]/print/ (cetak per transaksi), print/ (cetak laporan semua)
       akuntansi/          # Chart of Akun, jurnal/, pembayaran/ (Hutang & Piutang), laporan/
       users/
+    superadmin/          # Halaman khusus role SUPERADMIN (di luar Company manapun)
+      layout.tsx           # Cek sesi role SUPERADMIN + render SuperadminShell
+      page.tsx              # Ringkasan (jumlah pending/aktif/ditangguhkan, distribusi paket)
+      pendaftaran/           # Approval/tolak pendaftaran Company berstatus PENDING
+      perusahaan/            # Kelola semua Company: suspend/aktifkan, atur paket langganan
+      paket/                 # CRUD SubscriptionPlan (Free/Basic/Pro, dst.)
     api/                # Route handler REST (satu folder per modul/resource)
       auth/[...nextauth]/
       register/           # Endpoint publik pendaftaran perusahaan
@@ -168,15 +186,21 @@ src/
       laporan/
       users/
       dashboard/stats/
+      superadmin/          # Endpoint khusus SUPERADMIN (requireSuperAdmin(), lintas-Company)
+        overview/            # Statistik ringkasan
+        companies/            # GET list + PATCH [id] (approve/reject/suspend/activate/assignPlan)
+        plans/                # GET/POST + PUT/DELETE [id] untuk SubscriptionPlan
   components/           # Komponen UI reusable (DataTable, Modal, Sidebar, chart, dst)
+                          # + SuperadminShell (layout terpisah untuk area /superadmin)
   lib/
     prisma.ts            # Prisma client singleton
-    auth.ts               # Konfigurasi NextAuth (JWT menyertakan companyId)
-    rbac.ts                # Definisi role & permission (PUSAT kontrol akses)
-    apiAuth.ts              # Helper requirePermission() & getCompanyId() untuk route handler
+    auth.ts               # Konfigurasi NextAuth (JWT menyertakan companyId; cek tabel SuperAdmin lebih dulu)
+    rbac.ts                # Definisi role & permission (PUSAT kontrol akses) + tipe AppRole (termasuk SUPERADMIN)
+    apiAuth.ts              # Helper requirePermission()/getCompanyId() (tenant) & requireSuperAdmin() (platform)
+    subscriptionLimits.ts    # Penegakan batas maxUser/maxBarang sesuai SubscriptionPlan Company
     akuntansi.ts             # Posting jurnal otomatis (double-entry), semua company-aware
     defaultAkun.ts            # Daftar Chart of Akun default (dipakai seed & pendaftaran baru)
-  middleware.ts          # Proteksi route: redirect ke /login jika belum login
+  middleware.ts          # Proteksi route: redirect ke /login jika belum login, pisahkan area SUPERADMIN vs tenant
 ```
 
 ## Cara Menambahkan Modul Baru
@@ -363,4 +387,5 @@ Lihat penjelasan lengkap di [bagian Metode Pembayaran & Hutang/Piutang](#metode-
 - Setiap route API memvalidasi sesi & permission lewat `requirePermission()` — bukan hanya disembunyikan di UI.
 - Middleware Next.js memblokir akses langsung ke halaman terproteksi bagi yang belum login.
 - Transaksi stok (pengadaan/penjualan) menggunakan `prisma.$transaction` agar perubahan data barang & detail transaksi konsisten (atomic).
-- Login ditolak jika perusahaan (`Company.isActive`) dinonaktifkan, meski password user benar.
+- Login ditolak jika perusahaan belum berstatus `ACTIVE` (`Company.status` masih `PENDING`/`REJECTED`, atau sudah `SUSPENDED`), meski password user benar.
+- **Super Admin terisolasi dari tenant** — akun Super Admin disimpan di tabel terpisah (`SuperAdmin`, bukan `User`) sehingga tidak mungkin "naik level" dari akun perusahaan manapun. Middleware memastikan sesi `SUPERADMIN` hanya bisa mengakses `/superadmin/*`, dan sebaliknya sesi tenant biasa tidak bisa mengakses area itu sama sekali (lihat `requireSuperAdmin()` di `src/lib/apiAuth.ts` yang juga dicek ulang di setiap route API `/api/superadmin/*`, bukan cuma di middleware).

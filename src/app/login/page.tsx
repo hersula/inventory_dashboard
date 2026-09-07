@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, FormEvent } from "react";
-import { signIn } from "next-auth/react";
+import { signIn, getSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { Boxes, Lock, Mail, Loader2, AlertCircle } from "lucide-react";
 
@@ -26,10 +26,12 @@ export default function LoginPage() {
     setLoading(false);
 
     if (res?.error) {
-      setError("Email atau password salah.");
+      setError("Email/password salah, atau perusahaan Anda belum aktif (menunggu persetujuan/ditangguhkan).");
       return;
     }
-    router.push("/dashboard");
+
+    const session = await getSession();
+    router.push(session?.user?.role === "SUPERADMIN" ? "/superadmin" : "/dashboard");
     router.refresh();
   }
 

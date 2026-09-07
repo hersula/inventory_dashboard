@@ -1,12 +1,9 @@
 "use client";
 
 import { useState, FormEvent } from "react";
-import { signIn } from "next-auth/react";
-import { useRouter } from "next/navigation";
-import { Boxes, Building2, User, Lock, Mail, Loader2, AlertCircle, CheckCircle2 } from "lucide-react";
+import { Boxes, Building2, User, Lock, Mail, Loader2, AlertCircle, CheckCircle2, Clock } from "lucide-react";
 
 export default function RegisterPage() {
-  const router = useRouter();
   const [companyName, setCompanyName] = useState("");
   const [adminName, setAdminName] = useState("");
   const [email, setEmail] = useState("");
@@ -14,6 +11,7 @@ export default function RegisterPage() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -35,23 +33,42 @@ export default function RegisterPage() {
       body: JSON.stringify({ companyName, adminName, email, password }),
     });
     const data = await res.json().catch(() => ({}));
+    setLoading(false);
 
     if (!res.ok) {
-      setLoading(false);
       setError(data.message || "Gagal mendaftarkan perusahaan.");
       return;
     }
 
-    // Langsung login otomatis setelah daftar berhasil, biar tidak perlu isi form login lagi.
-    const loginRes = await signIn("credentials", { email, password, redirect: false });
-    setLoading(false);
+    // Company baru berstatus PENDING (lihat api/register) -> belum bisa login
+    // sampai disetujui Super Admin, jadi tidak auto sign-in di sini.
+    setSubmitted(true);
+  }
 
-    if (loginRes?.error) {
-      router.push("/login");
-      return;
-    }
-    router.push("/dashboard");
-    router.refresh();
+  if (submitted) {
+    return (
+      <div
+        className="flex min-h-screen w-full flex-col items-center justify-center bg-gradient-to-br from-brand-950 via-brand-800 to-brand-500 px-4 py-10"
+        style={{
+          paddingTop: "max(2.5rem, env(safe-area-inset-top))",
+          paddingBottom: "max(2.5rem, env(safe-area-inset-bottom))",
+        }}
+      >
+        <div className="w-full max-w-md rounded-2xl bg-white p-8 text-center shadow-2xl">
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-amber-100">
+            <Clock className="h-6 w-6 text-amber-600" />
+          </div>
+          <h1 className="mt-4 text-xl font-semibold text-slate-800">Pendaftaran terkirim</h1>
+          <p className="mt-2 text-sm text-slate-500">
+            Perusahaan <strong>{companyName}</strong> sedang menunggu persetujuan Super Admin. Anda akan bisa login
+            dengan email <strong>{email}</strong> setelah pendaftaran disetujui.
+          </p>
+          <a href="/login" className="btn-primary mt-6 inline-flex w-full justify-center py-2.5">
+            Kembali ke halaman login
+          </a>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -170,14 +187,15 @@ export default function RegisterPage() {
           <div className="flex items-start gap-2 rounded-lg bg-brand-50 px-3 py-2.5 text-xs text-brand-700">
             <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
             <p>
-              Akun Anda akan otomatis mendapat peran <strong>Administrator</strong> dengan akses penuh, termasuk
-              menambahkan karyawan lain sebagai user di modul Manajemen User setelah masuk.
+              Pendaftaran akan ditinjau Super Admin terlebih dahulu. Setelah disetujui, akun Anda otomatis mendapat
+              peran <strong>Administrator</strong> dengan akses penuh, termasuk menambahkan karyawan lain sebagai
+              user di modul Manajemen User.
             </p>
           </div>
 
           <button type="submit" disabled={loading} className="btn-primary w-full py-2.5">
             {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-            Daftar &amp; Masuk
+            Daftar Perusahaan
           </button>
         </form>
 

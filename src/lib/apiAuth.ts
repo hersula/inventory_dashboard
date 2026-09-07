@@ -62,3 +62,18 @@ export async function requirePermission(permission: Permission) {
 export function getCompanyId(session: Session): number {
   return Number(session.user.companyId);
 }
+
+/**
+ * Dipakai di awal setiap route handler khusus Super Admin (src/app/api/superadmin/**).
+ * Super Admin tidak memakai Permission/rbac biasa karena levelnya di atas
+ * Company/tenant manapun — cukup cek role sesinya langsung.
+ */
+export async function requireSuperAdmin() {
+  const session = await getServerSession(authOptions);
+
+  if (!session || session.user.role !== "SUPERADMIN") {
+    return { session: null, error: NextResponse.json({ message: "Forbidden" }, { status: 403 }) };
+  }
+
+  return { session, error: null };
+}

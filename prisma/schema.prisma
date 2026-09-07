@@ -14,11 +14,74 @@ enum Role {
 }
 
 // ---------------------------------------------------------------
+// SUPER ADMIN (level platform, di luar Company/tenant manapun).
+// Login memakai provider credentials yang sama dengan User biasa (lihat
+// src/lib/auth.ts) tapi dicek dari tabel terpisah ini, sehingga tidak
+// terikat companyId apapun. Dipakai untuk menyetujui/menolak pendaftaran
+// perusahaan baru dan mengatur paket langganan (lihat src/app/superadmin).
+// ---------------------------------------------------------------
+model SuperAdmin {
+  id        Int      @id @default(autoincrement())
+  name      String
+  email     String   @unique
+  password  String
+  createdAt DateTime @default(now())
+}
+
+// Status siklus hidup pendaftaran & keaktifan sebuah Company:
+//   PENDING   -> baru daftar, menunggu persetujuan Super Admin, belum bisa login.
+//   ACTIVE    -> disetujui Super Admin, seluruh user bisa login normal.
+//   REJECTED  -> pendaftaran ditolak Super Admin (lihat rejectedReason).
+//   SUSPENDED -> sudah pernah aktif tapi ditangguhkan Super Admin (mis. langganan
+//                habis/menunggak) — login ditolak sampai diaktifkan kembali.
+enum CompanyStatus {
+  PENDING
+  ACTIVE
+  REJECTED
+  SUSPENDED
+}
+
+enum BillingCycle {
+  MONTHLY
+  YEARLY
+}
+
+// Status langganan Company terhadap SubscriptionPlan yang dipilihkan Super Admin.
+enum SubscriptionStatus {
+  TRIAL
+  ACTIVE
+  EXPIRED
+  CANCELED
+}
+
+// ---------------------------------------------------------------
+// PAKET LANGGANAN — dikelola Super Admin (src/app/superadmin/paket),
+// dipasangkan ke Company saat pendaftarannya disetujui (atau diganti
+// belakangan). "Free" adalah salah satu baris di sini (price = 0),
+// bukan kasus khusus, supaya pengaturannya konsisten satu tempat.
+// ---------------------------------------------------------------
+model SubscriptionPlan {
+  id           Int          @id @default(autoincrement())
+  nama         String
+  slug         String       @unique
+  harga        Decimal      @default(0) @db.Decimal(15, 2)
+  billingCycle BillingCycle @default(MONTHLY)
+  maxUser      Int? // null = tanpa batas
+  maxBarang    Int? // null = tanpa batas
+  deskripsi    String?      @db.Text
+  isActive     Boolean      @default(true)
+  createdAt    DateTime     @default(now())
+
+  companies Company[]
+}
+
+// ---------------------------------------------------------------
 // MULTI-TENANT: setiap Company (perusahaan) adalah satu "tenant".
 // Semua data operasional (barang, transaksi, akuntansi, user) selalu
 // terikat ke satu companyId, dan setiap query di API WAJIB difilter
 // dengan companyId milik user yang sedang login (lihat src/lib/apiAuth.ts).
-// Pendaftaran perusahaan baru: lihat src/app/api/register/route.ts.
+// Pendaftaran perusahaan baru: lihat src/app/api/register/route.ts —
+// company baru berstatus PENDING sampai disetujui Super Admin.
 // ---------------------------------------------------------------
 model Company {
   id        Int      @id @default(autoincrement())
@@ -27,8 +90,15 @@ model Company {
   email     String?
   telepon   String?
   alamat    String?
-  isActive  Boolean  @default(true)
+  status    CompanyStatus @default(PENDING)
+  rejectedReason String? @db.Text
+  approvedAt     DateTime?
   createdAt DateTime @default(now())
+
+  planId             Int?
+  plan               SubscriptionPlan?  @relation(fields: [planId], references: [id])
+  subscriptionStatus SubscriptionStatus @default(TRIAL)
+  subscriptionEndsAt DateTime?
 
   users         User[]
   kategori      Kategori[]
@@ -41,6 +111,9 @@ model Company {
   jurnalEntries JurnalEntry[]
   pembayaran    Pembayaran[]
   retur         Retur[]
+
+  @@index([planId])
+  @@index([status])
 }
 
 model User {

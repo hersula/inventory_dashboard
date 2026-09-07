@@ -27,8 +27,8 @@ export async function POST(req: NextRequest) {
   if (!user || !user.active) {
     return NextResponse.json({ message: "Email atau password salah" }, { status: 401 });
   }
-  if (!user.company || !user.company.isActive) {
-    return NextResponse.json({ message: "Perusahaan Anda sedang dinonaktifkan. Hubungi Administrator." }, { status: 403 });
+  if (!user.company || user.company.status !== "ACTIVE") {
+    return NextResponse.json({ message: "Perusahaan Anda belum aktif (menunggu persetujuan/ditangguhkan). Hubungi Super Admin." }, { status: 403 });
   }
 
   const valid = await bcrypt.compare(password, user.password);

@@ -1,4 +1,4 @@
-import { Role } from "@/lib/rbac";
+import { AppRole } from "@/lib/rbac";
 import "next-auth";
 import "next-auth/jwt";
 
@@ -8,14 +8,15 @@ declare module "next-auth" {
       id: string;
       name: string;
       email: string;
-      role: Role;
+      role: AppRole;
+      // Kosong ("") khusus untuk sesi SUPERADMIN, yang tidak terikat perusahaan manapun.
       companyId: string;
       companyName: string;
     };
   }
   interface User {
     id: string;
-    role: Role;
+    role: AppRole;
     companyId: string;
     companyName: string;
   }
@@ -24,7 +25,7 @@ declare module "next-auth" {
 declare module "next-auth/jwt" {
   interface JWT {
     id: string;
-    role: Role;
+    role: AppRole;
     companyId: string;
     companyName: string;
   }

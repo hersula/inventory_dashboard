@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requirePermission, getCompanyId } from "@/lib/apiAuth";
+import { checkPlanLimit } from "@/lib/subscriptionLimits";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 
@@ -39,6 +40,9 @@ export async function POST(req: NextRequest) {
   // jadi harus unik secara global, bukan hanya dalam satu perusahaan.
   const existing = await prisma.user.findUnique({ where: { email: parsed.data.email } });
   if (existing) return NextResponse.json({ message: "Email sudah terdaftar" }, { status: 409 });
+
+  const limitError = await checkPlanLimit(companyId, "user");
+  if (limitError) return limitError;
 
   const hashed = await bcrypt.hash(parsed.data.password, 10);
   const user = await prisma.user.create({

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requirePermission, getCompanyId } from "@/lib/apiAuth";
+import { checkPlanLimit } from "@/lib/subscriptionLimits";
 import { z } from "zod";
 
 const barangSchema = z.object({
@@ -53,6 +54,9 @@ export async function POST(req: NextRequest) {
   if (existing) {
     return NextResponse.json({ message: "Kode barang sudah digunakan" }, { status: 409 });
   }
+
+  const limitError = await checkPlanLimit(companyId, "barang");
+  if (limitError) return limitError;
 
   const barang = await prisma.barang.create({ data: { ...parsed.data, companyId } });
   return NextResponse.json(barang, { status: 201 });

@@ -53,6 +53,8 @@ export async function POST(req: NextRequest) {
 
   try {
     const result = await prisma.$transaction(async (tx) => {
+      // status default PENDING (lihat schema.prisma) -> belum bisa login sampai
+      // disetujui Super Admin di /superadmin/pendaftaran.
       const company = await tx.company.create({
         data: { nama: companyName, slug, email },
       });
@@ -78,7 +80,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json(
       {
-        message: "Pendaftaran berhasil. Silakan login.",
+        message: "Pendaftaran berhasil dikirim. Menunggu persetujuan Super Admin sebelum Anda bisa login.",
         company: { id: result.company.id, nama: result.company.nama, slug: result.company.slug },
       },
       { status: 201 }
