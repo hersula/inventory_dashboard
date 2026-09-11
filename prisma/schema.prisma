@@ -130,6 +130,7 @@ model User {
   penjualan     Penjualan[]
   jurnalEntries JurnalEntry[]
   pembayaran    Pembayaran[]
+  retur         Retur[]
 
   @@index([companyId])
 }
@@ -408,34 +409,53 @@ model Pembayaran {
   @@index([companyId])
 }
 
+// PEMBELIAN = retur barang ke supplier (dari transaksi Pengadaan) -> stok berkurang.
+// PENJUALAN = retur barang dari pelanggan (dari transaksi Penjualan) -> stok bertambah.
+enum JenisRetur {
+  PEMBELIAN
+  PENJUALAN
+}
+
+// ---------------------------------------------------------------
+// MODUL RETUR — retur sebagian/seluruh item dari satu transaksi Pengadaan
+// atau Penjualan yang sudah ada (referensiTipe/referensiId, pola sama seperti
+// Pembayaran di atas). Harga per item mengikuti harga di transaksi asal
+// (bukan input manual) supaya nilainya selalu konsisten dengan transaksi
+// yang diretur. Lihat src/lib/akuntansi.ts (jurnalReturPembelian/Penjualan)
+// untuk posting jurnal otomatisnya.
+// ---------------------------------------------------------------
 model Retur {
-  id         Int      @id @default(autoincrement())
-  nomorRetur String   @unique
-  tanggal    DateTime @default(now())
-  jenis      String // "pembelian" atau "penjualan"
-  total      Decimal  @default(0)
-  status     String   @default("draft")
+  id            Int           @id @default(autoincrement())
+  companyId     Int
+  company       Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  nomor         String
+  tanggal       DateTime      @default(now())
+  jenis         JenisRetur
+  // referensiTipe: "pengadaan" | "penjualan" -- transaksi asal yang diretur.
+  referensiTipe String
+  referensiId   Int
+  userId        Int
+  user          User          @relation(fields: [userId], references: [id])
+  catatan       String?
+  total         Decimal       @default(0) @db.Decimal(15, 2)
+  detail        DetailRetur[]
+  createdAt     DateTime      @default(now())
 
-  // Relasi ke Company (penting!)
-  companyId Int
-  company   Company @relation(fields: [companyId], references: [id])
-
-  // Relasi ke detail retur (opsional)
-  detailRetur DetailRetur[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  @@unique([companyId, nomor])
+  @@index([referensiTipe, referensiId])
+  @@index([userId])
 }
 
 model DetailRetur {
-  id       Int     @id @default(autoincrement())
-  returId  Int
-  barangId Int // sesuaikan dengan Barang
-  jumlah   Int
-  harga    Decimal @db.Decimal(15, 2) // sesuaikan format decimal dengan Barang
-
-  retur  Retur  @relation(fields: [returId], references: [id])
-  barang Barang @relation(fields: [barangId], references: [id]) // ganti ke Barang
+  id          Int     @id @default(autoincrement())
+  returId     Int
+  retur       Retur   @relation(fields: [returId], references: [id], onDelete: Cascade)
+  barangId    Int
+  barang      Barang  @relation(fields: [barangId], references: [id])
+  qty         Int
+  hargaSatuan Decimal @db.Decimal(15, 2)
+  subtotal    Decimal @db.Decimal(15, 2)
 
   @@unique([returId, barangId])
+  @@index([barangId])
 }

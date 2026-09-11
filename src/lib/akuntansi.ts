@@ -237,6 +237,123 @@ export async function jurnalPenjualan(
   });
 }
 
+export async function generateNomorRetur(tx: TxClient, companyId: number, jenis: "PEMBELIAN" | "PENJUALAN") {
+  const now = new Date();
+  const prefix = `${jenis === "PEMBELIAN" ? "RB" : "RJ"}-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const count = await tx.retur.count({ where: { companyId, nomor: { startsWith: prefix } } });
+  return `${prefix}-${String(count + 1).padStart(3, "0")}`;
+}
+
+/**
+ * Posting jurnal otomatis untuk RETUR PEMBELIAN (barang dikembalikan ke
+ * supplier, lawan dari jurnalPengadaan). Disederhanakan seperti perhitungan
+ * HPP di jurnalPenjualan: nilai retur dihitung dari qty x harga beli SAJA
+ * (tanpa proporsi diskon/PPN transaksi asal), supaya konsisten dengan cara
+ * HPP sudah dihitung di seluruh aplikasi ini.
+ *
+ *   Debit  Kas             — jika Pengadaan asal metodeBayar TUNAI (uang kembali)
+ *   Debit  Hutang Usaha     — jika KREDIT/TEMPO (hutang ke supplier berkurang)
+ *   Kredit Persediaan Barang Dagang (nilai retur) — stok berkurang
+ */
+export async function jurnalReturPembelian(
+  tx: TxClient,
+  params: {
+    companyId: number;
+    returId: number;
+    nomor: string;
+    tanggal: Date;
+    nilai: number;
+    metodeBayarAsal: string;
+    userId: number;
+  }
+) {
+  if (params.nilai <= 0) return null;
+  const persediaanId = await getAkunId(tx, KODE_AKUN.PERSEDIAAN, params.companyId);
+
+  const lines: JurnalLine[] = [{ akunId: persediaanId, kredit: params.nilai, keterangan: "Persediaan berkurang (retur ke supplier)" }];
+
+  if (isLunasDiMuka(params.metodeBayarAsal)) {
+    const kasId = await getAkunId(tx, KODE_AKUN.KAS, params.companyId);
+    lines.push({ akunId: kasId, debit: params.nilai, keterangan: "Penerimaan kembali dari supplier" });
+  } else {
+    const hutangId = await getAkunId(tx, KODE_AKUN.HUTANG_USAHA, params.companyId);
+    lines.push({ akunId: hutangId, debit: params.nilai, keterangan: "Hutang ke supplier berkurang" });
+  }
+
+  return postJurnal(tx, {
+    companyId: params.companyId,
+    tanggal: params.tanggal,
+    keterangan: `Retur pembelian ${params.nomor}`,
+    referensiTipe: "retur-pembelian",
+    referensiId: params.returId,
+    userId: params.userId,
+    lines,
+  });
+}
+
+/**
+ * Posting jurnal otomatis untuk RETUR PENJUALAN (barang dikembalikan
+ * pelanggan, lawan dari jurnalPenjualan). `nilaiJual` = qty x harga jual
+ * (dari Penjualan asal, tanpa proporsi diskon/PPN — simplifikasi yang sama
+ * seperti di atas); `hpp` = qty x harga beli (barang balik ke stok).
+ *
+ *   1) Pembalikan pendapatan:
+ *      Debit  Pendapatan Penjualan (nilaiJual)
+ *      Kredit Kas/Bank/Piutang Usaha — tergantung metodeBayar Penjualan asal
+ *   2) Pembalikan HPP:
+ *      Debit  Persediaan / Kredit HPP, sebesar qty x harga beli
+ */
+export async function jurnalReturPenjualan(
+  tx: TxClient,
+  params: {
+    companyId: number;
+    returId: number;
+    nomor: string;
+    tanggal: Date;
+    nilaiJual: number;
+    hpp: number;
+    metodeBayarAsal: string;
+    userId: number;
+  }
+) {
+  if (params.nilaiJual <= 0) return null;
+  const pendapatanId = await getAkunId(tx, KODE_AKUN.PENDAPATAN_PENJUALAN, params.companyId);
+
+  const lines: JurnalLine[] = [{ akunId: pendapatanId, debit: params.nilaiJual, keterangan: "Pendapatan penjualan berkurang (retur)" }];
+
+  if (params.metodeBayarAsal === "TUNAI") {
+    const kasId = await getAkunId(tx, KODE_AKUN.KAS, params.companyId);
+    lines.push({ akunId: kasId, kredit: params.nilaiJual, keterangan: "Pengembalian tunai ke pelanggan" });
+  } else if (params.metodeBayarAsal === "TRANSFER") {
+    const bankId = await getAkunId(tx, KODE_AKUN.BANK, params.companyId);
+    lines.push({ akunId: bankId, kredit: params.nilaiJual, keterangan: "Pengembalian transfer ke pelanggan" });
+  } else {
+    const piutangId = await getAkunId(tx, KODE_AKUN.PIUTANG_USAHA, params.companyId);
+    lines.push({ akunId: piutangId, kredit: params.nilaiJual, keterangan: "Piutang dari pelanggan berkurang" });
+  }
+
+  if (params.hpp > 0) {
+    const [persediaanId, hppId] = await Promise.all([
+      getAkunId(tx, KODE_AKUN.PERSEDIAAN, params.companyId),
+      getAkunId(tx, KODE_AKUN.HPP, params.companyId),
+    ]);
+    lines.push(
+      { akunId: persediaanId, debit: params.hpp, keterangan: "Persediaan bertambah (retur dari pelanggan)" },
+      { akunId: hppId, kredit: params.hpp, keterangan: "Harga pokok penjualan berkurang" }
+    );
+  }
+
+  return postJurnal(tx, {
+    companyId: params.companyId,
+    tanggal: params.tanggal,
+    keterangan: `Retur penjualan ${params.nomor}`,
+    referensiTipe: "retur-penjualan",
+    referensiId: params.returId,
+    userId: params.userId,
+    lines,
+  });
+}
+
 async function generateNomorPembayaran(tx: TxClient, companyId: number, tipe: "HUTANG" | "PIUTANG") {
   const now = new Date();
   const prefix = `${tipe === "HUTANG" ? "BH" : "BP"}-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}`;

@@ -34,6 +34,8 @@ const rolePermissions: Record<Role, Permission[]> = {
     "pengadaan.manage",
     "penjualan.view",
     "penjualan.manage",
+    "retur.view",
+    "retur.manage",
     "akuntansi.view",
     "akuntansi.manage",
     "users.manage",
@@ -46,10 +48,23 @@ const rolePermissions: Record<Role, Permission[]> = {
     "pengadaan.manage",
     "penjualan.view",
     "penjualan.manage",
+    "retur.view",
+    "retur.manage",
     "akuntansi.view",
     "akuntansi.manage",
   ],
-  STAFF: ["dashboard.view", "barang.view", "pengadaan.view", "pengadaan.manage", "penjualan.view", "penjualan.manage"],
+  // Retur mengubah stok & memposting jurnal seperti Pengadaan/Penjualan, jadi
+  // STAFF ikut diberi akses (sama seperti mereka sudah bisa pengadaan.manage/penjualan.manage).
+  STAFF: [
+    "dashboard.view",
+    "barang.view",
+    "pengadaan.view",
+    "pengadaan.manage",
+    "penjualan.view",
+    "penjualan.manage",
+    "retur.view",
+    "retur.manage",
+  ],
 };
 
 export function can(role: AppRole | undefined, permission: Permission): boolean {

@@ -39,8 +39,9 @@ Di atas seluruh perusahaan (tenant), ada satu peran **Super Admin** — akun pla
 | **Master Barang** | CRUD data barang: kode, nama, kategori (dengan quick-add kategori baru langsung dari form), satuan, harga beli/jual, stok, stok minimum |
 | **Pengadaan Barang** | Transaksi barang masuk (dari supplier), dengan **diskon (%), PPN 11%, dan metode pembayaran (Tunai/Kredit/Tempo)**. Menambah stok otomatis, quick-add supplier langsung dari form, riwayat transaksi, **cetak per transaksi & cetak laporan semua transaksi**, **edit transaksi** (stok disesuaikan otomatis berdasarkan selisih qty), batal transaksi (stok dikembalikan) |
 | **Penjualan Barang** | Transaksi barang keluar, dengan **diskon (%), PPN 11%, dan metode pembayaran (Tunai/Transfer Bank/Kredit/Tempo)**. Mengurangi stok otomatis dengan validasi stok tersedia, quick-add pelanggan langsung dari form, riwayat transaksi, **cetak per transaksi & cetak laporan semua transaksi**, **edit transaksi** (stok disesuaikan otomatis, termasuk validasi jika qty baru melebihi stok tersedia), batal transaksi |
+| **Retur Barang** | Retur **Pembelian** (ke supplier, dari transaksi Pengadaan) & retur **Penjualan** (dari pelanggan, dari transaksi Penjualan). Pilih transaksi asal + qty per barang (dibatasi sisa yang belum diretur), stok & jurnal disesuaikan otomatis, bisa dibatalkan |
 | **Manajemen User** | CRUD user & role — **dibatasi hanya untuk user dalam perusahaan yang sama** (khusus Administrator) |
-| **Akuntansi** | Chart of Akun (COA), Jurnal Umum (manual + **otomatis** dari transaksi Pengadaan/Penjualan lewat double-entry bookkeeping), **Pembayaran Hutang & Piutang** (pelunasan transaksi Kredit/Tempo), dan Laporan Keuangan (Laba Rugi & Neraca Saldo) |
+| **Akuntansi** | Chart of Akun (COA), Jurnal Umum (manual + **otomatis** dari transaksi Pengadaan/Penjualan/Retur lewat double-entry bookkeeping), **Pembayaran Hutang & Piutang** (pelunasan transaksi Kredit/Tempo), dan Laporan Keuangan (Laba Rugi & Neraca Saldo) |
 
 ## Role & Hak Akses
 
@@ -49,8 +50,8 @@ Role diatur secara terpusat di `src/lib/rbac.ts`, dipakai bersama oleh sidebar (
 | Role | Hak Akses |
 |---|---|
 | **ADMIN** | Akses penuh ke seluruh modul, termasuk Manajemen User & Akuntansi — dibatasi ke perusahaannya sendiri |
-| **MANAGER** | Melihat & mengelola dashboard, master barang, pengadaan, penjualan, dan **Akuntansi** (tanpa akses Manajemen User) |
-| **STAFF** | Melihat dashboard & master barang, dapat membuat transaksi pengadaan/penjualan. Tidak punya akses ke modul Akuntansi (data keuangan dibatasi) |
+| **MANAGER** | Melihat & mengelola dashboard, master barang, pengadaan, penjualan, retur, dan **Akuntansi** (tanpa akses Manajemen User) |
+| **STAFF** | Melihat dashboard & master barang, dapat membuat transaksi pengadaan/penjualan/retur. Tidak punya akses ke modul Akuntansi (data keuangan dibatasi) |
 
 Akun demo (password: `password123`, dibuat lewat seed — semuanya tergabung dalam satu perusahaan contoh "Toko Demo"):
 
@@ -133,6 +134,8 @@ Buka [http://localhost:3000](http://localhost:3000) — Anda akan diarahkan ke h
 
 > **Catatan untuk instalasi yang sudah berjalan sebelum fitur metode pembayaran & Hutang/Piutang ditambahkan:** migrasi ini menambahkan kolom `metodeBayar` ke `Pengadaan`/`Penjualan` (default `TUNAI`, aman untuk data lama — transaksi lama otomatis dianggap tunai/lunas) dan tabel baru `Pembayaran`. Tambahkan juga akun **Bank** (`1105`, Aset) secara manual di Chart of Akun untuk perusahaan yang sudah terdaftar, supaya jurnal transaksi bermetode Transfer Bank bisa terposting.
 
+> **Catatan untuk instalasi yang sudah berjalan sebelum modul Retur Barang (versi final) ditambahkan:** tabel `Retur`/`DetailRetur` sebelumnya sudah ada di skema (dari migrasi awal) tapi belum ada halaman/API-nya sama sekali (belum pernah dipakai aplikasi). Migrasi ini mengubah ulang struktur kedua tabel tersebut (nama kolom, tipe `jenis` jadi enum `JenisRetur`, tambah `referensiTipe`/`referensiId`/`userId`) supaya konsisten dengan pola modul transaksi lain — aman dijalankan karena belum ada data retur nyata yang tersimpan di tabel lama itu.
+
 > **Troubleshooting: error TypeScript "Object literal may only specify known properties" / field seperti `metodeBayar` dianggap tidak ada.** Ini terjadi kalau `schema.prisma` sudah diupdate tapi Prisma Client (kode TypeScript hasil generate di `node_modules/@prisma/client`) belum ikut di-generate ulang, jadi tipenya masih versi lama. Jalankan:
 > ```bash
 > npx prisma generate
@@ -163,6 +166,7 @@ src/
       master-barang/
       pengadaan/          # + [id]/print/ (cetak per transaksi), print/ (cetak laporan semua)
       penjualan/          # + [id]/print/ (cetak per transaksi), print/ (cetak laporan semua)
+      retur/              # Retur Pembelian (ke supplier) & Retur Penjualan (dari pelanggan)
       akuntansi/          # Chart of Akun, jurnal/, pembayaran/ (Hutang & Piutang), laporan/
       users/
     superadmin/          # Halaman khusus role SUPERADMIN (di luar Company manapun)
@@ -178,6 +182,7 @@ src/
       kategori/
       pengadaan/
       penjualan/
+      retur/               # + sumber/ (detail item transaksi asal yang bisa diretur)
       supplier/
       pelanggan/
       akun/
@@ -198,14 +203,14 @@ src/
     rbac.ts                # Definisi role & permission (PUSAT kontrol akses) + tipe AppRole (termasuk SUPERADMIN)
     apiAuth.ts              # Helper requirePermission()/getCompanyId() (tenant) & requireSuperAdmin() (platform)
     subscriptionLimits.ts    # Penegakan batas maxUser/maxBarang sesuai SubscriptionPlan Company
-    akuntansi.ts             # Posting jurnal otomatis (double-entry), semua company-aware
+    akuntansi.ts             # Posting jurnal otomatis (Pengadaan/Penjualan/Retur/Pembayaran), semua company-aware
     defaultAkun.ts            # Daftar Chart of Akun default (dipakai seed & pendaftaran baru)
   middleware.ts          # Proteksi route: redirect ke /login jika belum login, pisahkan area SUPERADMIN vs tenant
 ```
 
 ## Cara Menambahkan Modul Baru
 
-Aplikasi ini didesain agar penambahan modul baru cepat dan konsisten, tanpa mengubah struktur inti. Sebagai contoh, menambahkan modul **"Retur Barang"**:
+Aplikasi ini didesain agar penambahan modul baru cepat dan konsisten, tanpa mengubah struktur inti. Sebagai contoh langkah-langkahnya (modul **"Retur Barang"** di bawah ini sudah benar-benar diimplementasikan dengan pola yang sama — lihat [bagian Modul Retur Barang](#modul-retur-barang) untuk detail lengkapnya):
 
 1. **Skema database** — tambahkan model baru di `prisma/schema.prisma`. **Sertakan kolom `companyId Int` + relasi ke `Company`** (lihat model lain sebagai contoh) supaya data modul baru otomatis ikut ter-isolasi per perusahaan, lalu jalankan:
    ```bash
@@ -334,6 +339,23 @@ Transaksi dengan metode **Kredit**/**Tempo** muncul di **Akuntansi > Hutang & Pi
 Setiap baris transaksi di Pengadaan dan Penjualan punya tombol cetak (ikon printer) untuk mencetak **bukti transaksi tunggal** (format invoice: info pihak terkait, daftar barang, ringkasan diskon/PPN/total, metode bayar, area tanda tangan). Tombol **"Cetak Laporan"** di toolbar mencetak **semua transaksi** yang sedang tampil (mengikuti filter pencarian yang aktif) sebagai satu laporan tabel dengan grand total di akhir.
 
 Halaman cetak (`/pengadaan/[id]/print`, `/pengadaan/print`, `/penjualan/[id]/print`, `/penjualan/print`) memakai layout khusus: sidebar & header otomatis disembunyikan saat mode cetak/print preview (lewat CSS `@media print` di `globals.css`), sehingga yang tercetak hanya dokumennya saja — tidak perlu library PDF tambahan, cukup dialog print bawaan browser (`window.print()`). Untuk menyimpan sebagai file PDF, pilih "Save as PDF" / "Simpan sebagai PDF" di dialog cetak browser.
+
+## Modul Retur Barang
+
+Retur (`/retur`) menangani pengembalian barang dari **dua arah**, dipilih lewat tab di halaman yang sama:
+
+- **Retur Pembelian** — barang dikembalikan **ke supplier** (mengacu ke satu transaksi Pengadaan yang sudah ada). Efeknya: **stok berkurang** lagi, dan supplier "mengembalikan uang/mengurangi hutang" kita.
+- **Retur Penjualan** — barang dikembalikan **dari pelanggan** (mengacu ke satu transaksi Penjualan yang sudah ada). Efeknya: **stok bertambah** lagi, dan kita "mengembalikan uang/mengurangi piutang" pelanggan.
+
+Cara pakai: pilih transaksi Pengadaan/Penjualan asal dari dropdown → sistem menampilkan daftar barang di transaksi tsb beserta **qty asal** dan **qty yang sudah pernah diretur sebelumnya** (lihat `GET /api/retur/sumber`) → isi qty retur per barang (dibatasi ke sisa yang belum diretur, divalidasi lagi di server) → simpan.
+
+- **Harga mengikuti transaksi asal** — nilai retur dihitung dari `qty x hargaSatuan` sebagaimana tercatat di transaksi Pengadaan/Penjualan yang diretur (bukan input manual), supaya konsisten dengan histori transaksinya.
+- **Retur Pembelian divalidasi terhadap stok** — kalau barang yang mau diretur ternyata sudah kadung terjual lagi (stok saat ini kurang dari qty retur), sistem menolak dengan pesan jelas. Retur Penjualan tidak perlu validasi ini (menambah stok selalu aman).
+- **Bisa dibatalkan** — tombol Batalkan mengembalikan stok & menghapus jurnal otomatis terkait, seperti halnya modul Pembayaran. Membatalkan Retur Penjualan (yang berarti mengurangi stok lagi) divalidasi supaya tidak membuat stok minus.
+- **Jurnal otomatis** (lihat `jurnalReturPembelian`/`jurnalReturPenjualan` di `src/lib/akuntansi.ts`, fail-safe seperti modul transaksi lain):
+  - Retur Pembelian: `Kredit Persediaan` sebesar nilai retur, lawannya `Debit Kas` (jika Pengadaan asal Tunai) atau `Debit Hutang Usaha` (jika Kredit/Tempo).
+  - Retur Penjualan: `Debit Pendapatan Penjualan` (membalik pendapatan) sebesar nilai retur, lawannya `Kredit Kas`/`Bank`/`Piutang Usaha` (tergantung metode bayar Penjualan asal) — ditambah pembalikan HPP: `Debit Persediaan` / `Kredit HPP` sebesar qty x harga beli.
+  - Sengaja **disederhanakan tanpa proporsi diskon/PPN** dari transaksi asal (konsisten dengan cara HPP juga selalu dihitung dari harga beli mentah di seluruh aplikasi ini, tidak terpengaruh diskon/PPN sisi jual).
 
 ## Modul Akuntansi
 
