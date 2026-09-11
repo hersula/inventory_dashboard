@@ -40,6 +40,7 @@ Di atas seluruh perusahaan (tenant), ada satu peran **Super Admin** — akun pla
 | **Pengadaan Barang** | Transaksi barang masuk (dari supplier), dengan **diskon (%), PPN 11%, dan metode pembayaran (Tunai/Kredit/Tempo)**. Menambah stok otomatis, quick-add supplier langsung dari form, riwayat transaksi, **cetak per transaksi & cetak laporan semua transaksi**, **edit transaksi** (stok disesuaikan otomatis berdasarkan selisih qty), batal transaksi (stok dikembalikan) |
 | **Penjualan Barang** | Transaksi barang keluar, dengan **diskon (%), PPN 11%, dan metode pembayaran (Tunai/Transfer Bank/Kredit/Tempo)**. Mengurangi stok otomatis dengan validasi stok tersedia, quick-add pelanggan langsung dari form, riwayat transaksi, **cetak per transaksi & cetak laporan semua transaksi**, **edit transaksi** (stok disesuaikan otomatis, termasuk validasi jika qty baru melebihi stok tersedia), batal transaksi |
 | **Retur Barang** | Retur **Pembelian** (ke supplier, dari transaksi Pengadaan) & retur **Penjualan** (dari pelanggan, dari transaksi Penjualan). Pilih transaksi asal + qty per barang (dibatasi sisa yang belum diretur), stok & jurnal disesuaikan otomatis, bisa dibatalkan |
+| **Laporan Stok Barang** | Kartu stok per barang — log kronologis semua pergerakan (masuk dari Pengadaan/Retur Penjualan, keluar dari Penjualan/Retur Pembelian) lengkap saldo berjalan, bisa difilter tanggal & dicetak |
 | **Manajemen User** | CRUD user & role — **dibatasi hanya untuk user dalam perusahaan yang sama** (khusus Administrator) |
 | **Akuntansi** | Chart of Akun (COA), Jurnal Umum (manual + **otomatis** dari transaksi Pengadaan/Penjualan/Retur lewat double-entry bookkeeping), **Pembayaran Hutang & Piutang** (pelunasan transaksi Kredit/Tempo), dan Laporan Keuangan (Laba Rugi & Neraca Saldo) |
 
@@ -167,6 +168,7 @@ src/
       pengadaan/          # + [id]/print/ (cetak per transaksi), print/ (cetak laporan semua)
       penjualan/          # + [id]/print/ (cetak per transaksi), print/ (cetak laporan semua)
       retur/              # Retur Pembelian (ke supplier) & Retur Penjualan (dari pelanggan)
+      laporan-stok/       # Kartu stok per barang (log Pengadaan/Penjualan/Retur + saldo berjalan)
       akuntansi/          # Chart of Akun, jurnal/, pembayaran/ (Hutang & Piutang), laporan/
       users/
     superadmin/          # Halaman khusus role SUPERADMIN (di luar Company manapun)
@@ -188,7 +190,7 @@ src/
       akun/
       jurnal/
       pembayaran/          # + outstanding/ (daftar hutang/piutang yang perlu dibayar)
-      laporan/
+      laporan/             # + kartu-stok/ (log pergerakan stok satu barang, dipakai halaman laporan-stok)
       users/
       dashboard/stats/
       superadmin/          # Endpoint khusus SUPERADMIN (requireSuperAdmin(), lintas-Company)
@@ -356,6 +358,19 @@ Cara pakai: pilih transaksi Pengadaan/Penjualan asal dari dropdown → sistem me
   - Retur Pembelian: `Kredit Persediaan` sebesar nilai retur, lawannya `Debit Kas` (jika Pengadaan asal Tunai) atau `Debit Hutang Usaha` (jika Kredit/Tempo).
   - Retur Penjualan: `Debit Pendapatan Penjualan` (membalik pendapatan) sebesar nilai retur, lawannya `Kredit Kas`/`Bank`/`Piutang Usaha` (tergantung metode bayar Penjualan asal) — ditambah pembalikan HPP: `Debit Persediaan` / `Kredit HPP` sebesar qty x harga beli.
   - Sengaja **disederhanakan tanpa proporsi diskon/PPN** dari transaksi asal (konsisten dengan cara HPP juga selalu dihitung dari harga beli mentah di seluruh aplikasi ini, tidak terpengaruh diskon/PPN sisi jual).
+
+## Modul Laporan Stok Barang
+
+Halaman `/laporan-stok` menampilkan **kartu stok** — log aktivitas kronologis satu barang yang dipilih, digabung dari 3 sumber sekaligus (lihat `GET /api/laporan/kartu-stok`):
+
+| Sumber | Arah | Keterangan |
+|---|---|---|
+| `PengadaanDetail` | **Masuk** | Barang dibeli dari supplier |
+| `PenjualanDetail` | **Keluar** | Barang terjual ke pelanggan |
+| `DetailRetur` (jenis `PEMBELIAN`) | **Keluar** | Barang dikembalikan ke supplier |
+| `DetailRetur` (jenis `PENJUALAN`) | **Masuk** | Barang dikembalikan pelanggan |
+
+Setiap baris menampilkan tanggal, jenis pergerakan, nomor transaksi, pihak terkait (supplier/pelanggan), qty masuk/keluar, dan **saldo berjalan**. Saldo berjalan selalu dihitung dari **seluruh riwayat** (bukan dari tanggal filter) supaya tetap akurat dan rekonsiliasi dengan stok barang saat ini — filter tanggal (opsional) hanya memotong baris mana yang ditampilkan, dengan baris "Saldo Awal Periode" menunjukkan saldo tepat sebelum tanggal mulai. Tidak ada permission baru — laporan ini memakai `barang.view` yang sudah dimiliki ADMIN, MANAGER, maupun STAFF. Tombol **Cetak** memakai dialog print bawaan browser (sama seperti modul Pengadaan/Penjualan).
 
 ## Modul Akuntansi
 
