@@ -19,23 +19,23 @@
 
 */
 -- DropForeignKey
-ALTER TABLE `detailretur` DROP FOREIGN KEY `DetailRetur_returId_fkey`;
+ALTER TABLE `DetailRetur` DROP FOREIGN KEY `DetailRetur_returId_fkey`;
 
 -- DropForeignKey
-ALTER TABLE `retur` DROP FOREIGN KEY `Retur_companyId_fkey`;
+ALTER TABLE `Retur` DROP FOREIGN KEY `Retur_companyId_fkey`;
 
 -- DropIndex
-DROP INDEX `Retur_nomorRetur_key` ON `retur`;
+DROP INDEX `Retur_nomorRetur_key` ON `Retur`;
 
 -- AlterTable
-ALTER TABLE `detailretur` DROP COLUMN `harga`,
+ALTER TABLE `DetailRetur` DROP COLUMN `harga`,
     DROP COLUMN `jumlah`,
     ADD COLUMN `hargaSatuan` DECIMAL(15, 2) NOT NULL,
     ADD COLUMN `qty` INTEGER NOT NULL,
     ADD COLUMN `subtotal` DECIMAL(15, 2) NOT NULL;
 
 -- AlterTable
-ALTER TABLE `retur` DROP COLUMN `nomorRetur`,
+ALTER TABLE `Retur` DROP COLUMN `nomorRetur`,
     DROP COLUMN `status`,
     DROP COLUMN `updatedAt`,
     ADD COLUMN `catatan` VARCHAR(191) NULL,

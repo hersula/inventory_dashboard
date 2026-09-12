@@ -1,14 +1,11 @@
 {
-  "/api/barang/route": "app/api/barang/route.js",
-  "/api/opname/route": "app/api/opname/route.js",
-  "/api/auth/[...nextauth]/route": "app/api/auth/[...nextauth]/route.js",
-  "/api/penjualan/route": "app/api/penjualan/route.js",
-  "/api/pelanggan/route": "app/api/pelanggan/route.js",
+  "/login/page": "app/login/page.js",
+  "/api/laporan/kartu-stok/route": "app/api/laporan/kartu-stok/route.js",
   "/api/pengadaan/route": "app/api/pengadaan/route.js",
   "/api/supplier/route": "app/api/supplier/route.js",
+  "/api/barang/route": "app/api/barang/route.js",
   "/(app)/stock-opname/page": "app/(app)/stock-opname/page.js",
-  "/(app)/penjualan/page": "app/(app)/penjualan/page.js",
-  "/(app)/akuntansi/page": "app/(app)/akuntansi/page.js",
-  "/(app)/master-barang/page": "app/(app)/master-barang/page.js",
+  "/(app)/laporan-stok/page": "app/(app)/laporan-stok/page.js",
+  "/(app)/dashboard/page": "app/(app)/dashboard/page.js",
   "/(app)/pengadaan/page": "app/(app)/pengadaan/page.js"
 }

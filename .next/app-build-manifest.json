@@ -1,15 +1,25 @@
 {
   "pages": {
+    "/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/page.js"
+    ],
     "/layout": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
       "static/css/app/layout.css",
       "static/chunks/app/layout.js"
     ],
-    "/(app)/penjualan/page": [
+    "/login/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
-      "static/chunks/app/(app)/penjualan/page.js"
+      "static/chunks/app/login/page.js"
+    ],
+    "/(app)/dashboard/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/(app)/dashboard/page.js"
     ],
     "/(app)/layout": [
       "static/chunks/webpack.js",
@@ -20,26 +30,6 @@
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
       "static/chunks/app/(app)/stock-opname/page.js"
-    ],
-    "/(app)/dashboard/page": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/(app)/dashboard/page.js"
-    ],
-    "/(app)/master-barang/page": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/(app)/master-barang/page.js"
-    ],
-    "/(app)/retur/page": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/(app)/retur/page.js"
-    ],
-    "/(app)/akuntansi/page": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/(app)/akuntansi/page.js"
     ],
     "/(app)/laporan-stok/page": [
       "static/chunks/webpack.js",
