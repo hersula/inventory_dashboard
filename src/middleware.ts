@@ -32,6 +32,7 @@ export const config = {
     "/pengadaan/:path*",
     "/penjualan/:path*",
     "/retur/:path*",
+    "/stock-opname/:path*",
     "/laporan-stok/:path*",
     "/akuntansi/:path*",
     "/users/:path*",

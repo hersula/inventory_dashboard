@@ -111,6 +111,7 @@ model Company {
   jurnalEntries JurnalEntry[]
   pembayaran    Pembayaran[]
   retur         Retur[]
+  stokOpname    StokOpname[]
 
   @@index([planId])
   @@index([status])
@@ -131,6 +132,7 @@ model User {
   jurnalEntries JurnalEntry[]
   pembayaran    Pembayaran[]
   retur         Retur[]
+  stokOpname    StokOpname[]
 
   @@index([companyId])
 }
@@ -186,9 +188,10 @@ model Barang {
   deskripsi       String?           @db.Text
   createdAt       DateTime          @default(now())
   updatedAt       DateTime          @updatedAt
-  pengadaanDetail PengadaanDetail[]
-  penjualanDetail PenjualanDetail[]
-  detailRetur     DetailRetur[]
+  pengadaanDetail  PengadaanDetail[]
+  penjualanDetail  PenjualanDetail[]
+  detailRetur      DetailRetur[]
+  stokOpnameDetail StokOpnameDetail[]
 
   @@unique([companyId, kode])
   @@index([kategoriId])
@@ -457,5 +460,52 @@ model DetailRetur {
   subtotal    Decimal @db.Decimal(15, 2)
 
   @@unique([returId, barangId])
+  @@index([barangId])
+}
+
+// ---------------------------------------------------------------
+// MODUL STOCK OPNAME — hitung fisik stok gudang dibandingkan stok sistem.
+// Satu sesi opname bisa mencakup banyak barang sekaligus (tidak semua barang
+// wajib diisi — hanya barang yang benar-benar dihitung/diinput yang jadi
+// baris StokOpnameDetail). Saat disimpan, stok barang langsung disesuaikan
+// ke hasil hitung fisik (stokFisik), dan selisihnya (stokFisik - stokSistem)
+// diposting sebagai jurnal otomatis (lihat jurnalStokOpname di
+// src/lib/akuntansi.ts) — fail-safe seperti modul transaksi lain.
+// ---------------------------------------------------------------
+model StokOpname {
+  id                Int                @id @default(autoincrement())
+  companyId         Int
+  company           Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  nomor             String
+  tanggal           DateTime           @default(now())
+  userId            Int
+  user              User               @relation(fields: [userId], references: [id])
+  catatan           String?
+  // totalNilaiSelisih = nilai lebih - nilai kurang (net, bisa negatif).
+  totalNilaiSelisih Decimal            @default(0) @db.Decimal(15, 2)
+  detail            StokOpnameDetail[]
+  createdAt         DateTime           @default(now())
+
+  @@unique([companyId, nomor])
+  @@index([companyId])
+  @@index([userId])
+}
+
+model StokOpnameDetail {
+  id           Int        @id @default(autoincrement())
+  stokOpnameId Int
+  stokOpname   StokOpname @relation(fields: [stokOpnameId], references: [id], onDelete: Cascade)
+  barangId     Int
+  barang       Barang     @relation(fields: [barangId], references: [id])
+  stokSistem   Int
+  stokFisik    Int
+  // selisih = stokFisik - stokSistem (bisa negatif kalau stok fisik lebih sedikit).
+  selisih      Int
+  // hargaBeli disnapshot saat opname (harga beli barang bisa berubah di kemudian hari).
+  hargaBeli    Decimal    @db.Decimal(15, 2)
+  // nilaiSelisih = selisih x hargaBeli (bisa negatif).
+  nilaiSelisih Decimal    @db.Decimal(15, 2)
+
+  @@unique([stokOpnameId, barangId])
   @@index([barangId])
 }

@@ -13,8 +13,10 @@ export const DEFAULT_AKUN: {
   { kode: "2102", nama: "PPN Keluaran", tipe: "KEWAJIBAN", saldoNormal: "KREDIT" },
   { kode: "3101", nama: "Modal Pemilik", tipe: "MODAL", saldoNormal: "KREDIT" },
   { kode: "4101", nama: "Pendapatan Penjualan", tipe: "PENDAPATAN", saldoNormal: "KREDIT" },
+  { kode: "4102", nama: "Pendapatan Selisih Stok Opname", tipe: "PENDAPATAN", saldoNormal: "KREDIT" },
   { kode: "5101", nama: "Harga Pokok Penjualan (HPP)", tipe: "BEBAN", saldoNormal: "DEBIT" },
   { kode: "6101", nama: "Beban Operasional", tipe: "BEBAN", saldoNormal: "DEBIT" },
   { kode: "6102", nama: "Beban Gaji", tipe: "BEBAN", saldoNormal: "DEBIT" },
   { kode: "6103", nama: "Beban Sewa", tipe: "BEBAN", saldoNormal: "DEBIT" },
+  { kode: "6104", nama: "Beban Selisih Stok Opname", tipe: "BEBAN", saldoNormal: "DEBIT" },
 ];

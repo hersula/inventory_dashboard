@@ -15,7 +15,9 @@ export const KODE_AKUN = {
   HUTANG_USAHA: "2101",
   PPN_KELUARAN: "2102",
   PENDAPATAN_PENJUALAN: "4101",
+  SELISIH_STOK_LEBIH: "4102",
   HPP: "5101",
+  SELISIH_STOK_KURANG: "6104",
 } as const;
 
 /** Tarif PPN yang berlaku (11%) — satu sumber kebenaran dipakai di semua route transaksi. */
@@ -435,3 +437,68 @@ export async function jurnalPembayaranPiutang(
 }
 
 export { generateNomorPembayaran };
+
+export async function generateNomorOpname(tx: TxClient, companyId: number) {
+  const now = new Date();
+  const prefix = `SO-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const count = await tx.stokOpname.count({ where: { companyId, nomor: { startsWith: prefix } } });
+  return `${prefix}-${String(count + 1).padStart(3, "0")}`;
+}
+
+/**
+ * Posting jurnal otomatis untuk STOCK OPNAME (penyesuaian stok hasil hitung
+ * fisik). `nilaiLebih`/`nilaiKurang` adalah jumlah (selisih x harga beli) dari
+ * seluruh barang yang stok fisiknya lebih besar/lebih kecil dari stok sistem —
+ * dua kelompok ini diposting sebagai pasangan debit/kredit terpisah supaya
+ * masing-masing balance sendiri (dan totalnya otomatis tetap balance):
+ *
+ *   Selisih lebih (stok fisik > sistem):
+ *     Debit  Persediaan Barang Dagang
+ *     Kredit Pendapatan Selisih Stok Opname
+ *   Selisih kurang (stok fisik < sistem):
+ *     Debit  Beban Selisih Stok Opname
+ *     Kredit Persediaan Barang Dagang
+ */
+export async function jurnalStokOpname(
+  tx: TxClient,
+  params: {
+    companyId: number;
+    opnameId: number;
+    nomor: string;
+    tanggal: Date;
+    nilaiLebih: number;
+    nilaiKurang: number;
+    userId: number;
+  }
+) {
+  if (params.nilaiLebih <= 0 && params.nilaiKurang <= 0) return null;
+
+  const persediaanId = await getAkunId(tx, KODE_AKUN.PERSEDIAAN, params.companyId);
+  const lines: JurnalLine[] = [];
+
+  if (params.nilaiLebih > 0) {
+    const pendapatanSelisihId = await getAkunId(tx, KODE_AKUN.SELISIH_STOK_LEBIH, params.companyId);
+    lines.push(
+      { akunId: persediaanId, debit: params.nilaiLebih, keterangan: "Persediaan bertambah (selisih stok opname lebih)" },
+      { akunId: pendapatanSelisihId, kredit: params.nilaiLebih, keterangan: "Selisih stok opname (lebih)" }
+    );
+  }
+
+  if (params.nilaiKurang > 0) {
+    const bebanSelisihId = await getAkunId(tx, KODE_AKUN.SELISIH_STOK_KURANG, params.companyId);
+    lines.push(
+      { akunId: bebanSelisihId, debit: params.nilaiKurang, keterangan: "Selisih stok opname (kurang)" },
+      { akunId: persediaanId, kredit: params.nilaiKurang, keterangan: "Persediaan berkurang (selisih stok opname kurang)" }
+    );
+  }
+
+  return postJurnal(tx, {
+    companyId: params.companyId,
+    tanggal: params.tanggal,
+    keterangan: `Stock opname ${params.nomor}`,
+    referensiTipe: "stok-opname",
+    referensiId: params.opnameId,
+    userId: params.userId,
+    lines,
+  });
+}

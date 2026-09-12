@@ -1,65 +1,55 @@
 {
   "pages": {
-    "/login/page": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/login/page.js"
-    ],
     "/layout": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
       "static/css/app/layout.css",
       "static/chunks/app/layout.js"
     ],
-    "/page": [
+    "/(app)/penjualan/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
-      "static/chunks/app/page.js"
-    ],
-    "/(app)/dashboard/page": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/(app)/dashboard/page.js"
+      "static/chunks/app/(app)/penjualan/page.js"
     ],
     "/(app)/layout": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
       "static/chunks/app/(app)/layout.js"
     ],
-    "/register/page": [
+    "/(app)/stock-opname/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
-      "static/chunks/app/register/page.js"
+      "static/chunks/app/(app)/stock-opname/page.js"
     ],
-    "/(app)/users/page": [
+    "/(app)/dashboard/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
-      "static/chunks/app/(app)/users/page.js"
+      "static/chunks/app/(app)/dashboard/page.js"
     ],
-    "/superadmin/page": [
+    "/(app)/master-barang/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
-      "static/chunks/app/superadmin/page.js"
+      "static/chunks/app/(app)/master-barang/page.js"
     ],
-    "/superadmin/layout": [
+    "/(app)/retur/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
-      "static/chunks/app/superadmin/layout.js"
+      "static/chunks/app/(app)/retur/page.js"
     ],
-    "/superadmin/pendaftaran/page": [
+    "/(app)/akuntansi/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
-      "static/chunks/app/superadmin/pendaftaran/page.js"
+      "static/chunks/app/(app)/akuntansi/page.js"
     ],
-    "/superadmin/perusahaan/page": [
+    "/(app)/laporan-stok/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
-      "static/chunks/app/superadmin/perusahaan/page.js"
+      "static/chunks/app/(app)/laporan-stok/page.js"
     ],
-    "/superadmin/paket/page": [
+    "/_not-found/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
-      "static/chunks/app/superadmin/paket/page.js"
+      "static/chunks/app/_not-found/page.js"
     ]
   }
 }

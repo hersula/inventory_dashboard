@@ -12,6 +12,7 @@ const titleMap: Record<string, string> = {
   "/pengadaan": "Pengadaan Barang",
   "/penjualan": "Penjualan Barang",
   "/retur": "Retur Barang",
+  "/stock-opname": "Stock Opname",
   "/laporan-stok": "Laporan Stok Barang",
   "/akuntansi/jurnal": "Jurnal Umum",
   "/akuntansi/pembayaran": "Hutang & Piutang",

@@ -40,6 +40,7 @@ Di atas seluruh perusahaan (tenant), ada satu peran **Super Admin** — akun pla
 | **Pengadaan Barang** | Transaksi barang masuk (dari supplier), dengan **diskon (%), PPN 11%, dan metode pembayaran (Tunai/Kredit/Tempo)**. Menambah stok otomatis, quick-add supplier langsung dari form, riwayat transaksi, **cetak per transaksi & cetak laporan semua transaksi**, **edit transaksi** (stok disesuaikan otomatis berdasarkan selisih qty), batal transaksi (stok dikembalikan) |
 | **Penjualan Barang** | Transaksi barang keluar, dengan **diskon (%), PPN 11%, dan metode pembayaran (Tunai/Transfer Bank/Kredit/Tempo)**. Mengurangi stok otomatis dengan validasi stok tersedia, quick-add pelanggan langsung dari form, riwayat transaksi, **cetak per transaksi & cetak laporan semua transaksi**, **edit transaksi** (stok disesuaikan otomatis, termasuk validasi jika qty baru melebihi stok tersedia), batal transaksi |
 | **Retur Barang** | Retur **Pembelian** (ke supplier, dari transaksi Pengadaan) & retur **Penjualan** (dari pelanggan, dari transaksi Penjualan). Pilih transaksi asal + qty per barang (dibatasi sisa yang belum diretur), stok & jurnal disesuaikan otomatis, bisa dibatalkan |
+| **Stock Opname** | Hitung fisik stok gudang untuk semua/sebagian barang sekaligus, dibandingkan dengan stok sistem. Stok otomatis disesuaikan ke hasil hitung fisik, selisihnya diposting sebagai jurnal otomatis, bisa dibatalkan |
 | **Laporan Stok Barang** | Kartu stok per barang — log kronologis semua pergerakan (masuk dari Pengadaan/Retur Penjualan, keluar dari Penjualan/Retur Pembelian) lengkap saldo berjalan, bisa difilter tanggal & dicetak |
 | **Manajemen User** | CRUD user & role — **dibatasi hanya untuk user dalam perusahaan yang sama** (khusus Administrator) |
 | **Akuntansi** | Chart of Akun (COA), Jurnal Umum (manual + **otomatis** dari transaksi Pengadaan/Penjualan/Retur lewat double-entry bookkeeping), **Pembayaran Hutang & Piutang** (pelunasan transaksi Kredit/Tempo), dan Laporan Keuangan (Laba Rugi & Neraca Saldo) |
@@ -137,6 +138,8 @@ Buka [http://localhost:3000](http://localhost:3000) — Anda akan diarahkan ke h
 
 > **Catatan untuk instalasi yang sudah berjalan sebelum modul Retur Barang (versi final) ditambahkan:** tabel `Retur`/`DetailRetur` sebelumnya sudah ada di skema (dari migrasi awal) tapi belum ada halaman/API-nya sama sekali (belum pernah dipakai aplikasi). Migrasi ini mengubah ulang struktur kedua tabel tersebut (nama kolom, tipe `jenis` jadi enum `JenisRetur`, tambah `referensiTipe`/`referensiId`/`userId`) supaya konsisten dengan pola modul transaksi lain — aman dijalankan karena belum ada data retur nyata yang tersimpan di tabel lama itu.
 
+> **Catatan untuk instalasi yang sudah berjalan sebelum modul Stock Opname ditambahkan:** migrasi ini menambah tabel baru `StokOpname`/`StokOpnameDetail` (aman untuk data lama — tabel baru, tidak mengubah tabel yang sudah ada) serta 2 akun baru di `DEFAULT_AKUN` (`Pendapatan Selisih Stok Opname` kode `4102` dan `Beban Selisih Stok Opname` kode `6104`). Tambahkan kedua akun tersebut secara manual di modul Akuntansi > Chart of Akun untuk setiap perusahaan yang sudah terdaftar, supaya jurnal otomatis selisih stok opname bisa ikut terposting.
+
 > **Troubleshooting: error TypeScript "Object literal may only specify known properties" / field seperti `metodeBayar` dianggap tidak ada.** Ini terjadi kalau `schema.prisma` sudah diupdate tapi Prisma Client (kode TypeScript hasil generate di `node_modules/@prisma/client`) belum ikut di-generate ulang, jadi tipenya masih versi lama. Jalankan:
 > ```bash
 > npx prisma generate
@@ -168,6 +171,7 @@ src/
       pengadaan/          # + [id]/print/ (cetak per transaksi), print/ (cetak laporan semua)
       penjualan/          # + [id]/print/ (cetak per transaksi), print/ (cetak laporan semua)
       retur/              # Retur Pembelian (ke supplier) & Retur Penjualan (dari pelanggan)
+      stock-opname/       # Hitung fisik stok gudang vs stok sistem, selisih diposting ke jurnal
       laporan-stok/       # Kartu stok per barang (log Pengadaan/Penjualan/Retur + saldo berjalan)
       akuntansi/          # Chart of Akun, jurnal/, pembayaran/ (Hutang & Piutang), laporan/
       users/
@@ -185,6 +189,7 @@ src/
       pengadaan/
       penjualan/
       retur/               # + sumber/ (detail item transaksi asal yang bisa diretur)
+      opname/               # Stock Opname — GET/POST list+buat, [id]/ DELETE untuk batalkan
       supplier/
       pelanggan/
       akun/
@@ -359,6 +364,20 @@ Cara pakai: pilih transaksi Pengadaan/Penjualan asal dari dropdown → sistem me
   - Retur Penjualan: `Debit Pendapatan Penjualan` (membalik pendapatan) sebesar nilai retur, lawannya `Kredit Kas`/`Bank`/`Piutang Usaha` (tergantung metode bayar Penjualan asal) — ditambah pembalikan HPP: `Debit Persediaan` / `Kredit HPP` sebesar qty x harga beli.
   - Sengaja **disederhanakan tanpa proporsi diskon/PPN** dari transaksi asal (konsisten dengan cara HPP juga selalu dihitung dari harga beli mentah di seluruh aplikasi ini, tidak terpengaruh diskon/PPN sisi jual).
 
+## Modul Stock Opname
+
+Stock Opname (`/stock-opname`) menghitung fisik stok gudang dan membandingkannya dengan stok yang tercatat di sistem — dipakai untuk mengoreksi selisih akibat susut, salah catat, kehilangan, dll.
+
+Cara pakai: klik **"Opname Baru"** → sistem menampilkan **seluruh Master Barang** beserta stok sistemnya (bisa dicari lewat kolom cari) → isi kolom **"Stok Fisik"** hanya untuk barang yang benar-benar dihitung (barang yang dikosongkan tidak ikut tersimpan/berubah stoknya, jadi satu sesi opname bisa mencakup semua barang sekaligus atau hanya sebagian) → simpan.
+
+- **Stok langsung disesuaikan** ke hasil hitung fisik begitu disimpan (bukan ditambah/dikurangi, tapi di-set langsung ke angka yang diinput).
+- **Selisih dihitung per barang** (`stokFisik - stokSistem`) dan divaluasi dengan harga beli barang saat itu (disnapshot di `StokOpnameDetail.hargaBeli`, supaya histori tetap konsisten meski harga beli berubah di kemudian hari).
+- **Bisa dibatalkan** — tombol Batalkan mengembalikan stok ke kondisi sebelum opname & menghapus jurnal otomatis terkait. Membatalkan selisih **lebih** (yang berarti mengurangi stok lagi) divalidasi supaya tidak membuat stok minus (mis. karena barangnya sudah terjual lagi); selisih **kurang** selalu aman dibatalkan.
+- **Jurnal otomatis** (lihat `jurnalStokOpname` di `src/lib/akuntansi.ts`, fail-safe seperti modul transaksi lain — kalau Chart of Akun belum lengkap, opname tetap tersimpan):
+  - Selisih **lebih** (stok fisik > sistem): `Debit Persediaan` / `Kredit Pendapatan Selisih Stok Opname`.
+  - Selisih **kurang** (stok fisik < sistem): `Debit Beban Selisih Stok Opname` / `Kredit Persediaan`.
+  - Butuh 2 akun tambahan di Chart of Akun: **Pendapatan Selisih Stok Opname** (`4102`) dan **Beban Selisih Stok Opname** (`6104`) — sudah termasuk di `src/lib/defaultAkun.ts` sehingga otomatis dibuat untuk perusahaan baru. Untuk perusahaan yang sudah terdaftar sebelum fitur ini ada, tambahkan kedua akun tersebut secara manual di modul Akuntansi > Chart of Akun agar jurnal selisih stok opname bisa terposting.
+
 ## Modul Laporan Stok Barang
 
 Halaman `/laporan-stok` menampilkan **kartu stok** — log aktivitas kronologis satu barang yang dipilih, digabung dari 3 sumber sekaligus (lihat `GET /api/laporan/kartu-stok`):
@@ -389,7 +408,9 @@ Daftar akun keuangan (kode, nama, tipe: Aset/Kewajiban/Modal/Pendapatan/Beban, d
 | 2101 | Hutang Usaha | Pengadaan bermetode Kredit/Tempo, berkurang saat hutang dilunasi |
 | 2102 | PPN Keluaran | PPN dari transaksi Penjualan (utang pajak ke kas negara) |
 | 4101 | Pendapatan Penjualan | Pendapatan dari transaksi penjualan (sebesar DPP, tidak termasuk PPN) |
+| 4102 | Pendapatan Selisih Stok Opname | Selisih stok opname yang nilainya lebih besar dari stok sistem |
 | 5101 | Harga Pokok Penjualan (HPP) | Beban pokok atas barang yang terjual |
+| 6104 | Beban Selisih Stok Opname | Selisih stok opname yang nilainya lebih kecil dari stok sistem |
 
 Akun lain (Modal, Beban Operasional/Gaji/Sewa) sudah disiapkan di seed sebagai contoh dan bisa dipakai untuk jurnal manual.
 

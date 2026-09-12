@@ -23,7 +23,9 @@ export type Permission =
   | "akuntansi.manage"
   | "users.manage"
   | "retur.view"
-  | "retur.manage";
+  | "retur.manage"
+  | "opname.view"
+  | "opname.manage";
 
 const rolePermissions: Record<Role, Permission[]> = {
   ADMIN: [
@@ -36,6 +38,8 @@ const rolePermissions: Record<Role, Permission[]> = {
     "penjualan.manage",
     "retur.view",
     "retur.manage",
+    "opname.view",
+    "opname.manage",
     "akuntansi.view",
     "akuntansi.manage",
     "users.manage",
@@ -50,11 +54,15 @@ const rolePermissions: Record<Role, Permission[]> = {
     "penjualan.manage",
     "retur.view",
     "retur.manage",
+    "opname.view",
+    "opname.manage",
     "akuntansi.view",
     "akuntansi.manage",
   ],
-  // Retur mengubah stok & memposting jurnal seperti Pengadaan/Penjualan, jadi
-  // STAFF ikut diberi akses (sama seperti mereka sudah bisa pengadaan.manage/penjualan.manage).
+  // Retur & Stock Opname mengubah stok & memposting jurnal seperti
+  // Pengadaan/Penjualan, jadi STAFF ikut diberi akses (sama seperti mereka
+  // sudah bisa pengadaan.manage/penjualan.manage) — staf gudanglah yang
+  // biasanya turun langsung menghitung stok fisik.
   STAFF: [
     "dashboard.view",
     "barang.view",
@@ -64,6 +72,8 @@ const rolePermissions: Record<Role, Permission[]> = {
     "penjualan.manage",
     "retur.view",
     "retur.manage",
+    "opname.view",
+    "opname.manage",
   ],
 };
 
